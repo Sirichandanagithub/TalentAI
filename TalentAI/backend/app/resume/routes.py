@@ -1,9 +1,15 @@
-from fastapi import APIRouter, Depends, File, UploadFile
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    UploadFile,
+)
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import get_current_user
 from app.auth.models import User
 from app.database.session import get_db
+from app.resume.schema import ResumeResponse
 from app.resume.services import save_resume
 
 router = APIRouter(
@@ -12,19 +18,23 @@ router = APIRouter(
 )
 
 
-@router.post("/upload")
+@router.post(
+    "/upload",
+    response_model=ResumeResponse,
+)
 async def upload_resume(
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    """
+    Upload a resume for the authenticated user.
+    """
+
     result = await save_resume(
         db=db,
         file=file,
         current_user=current_user,
     )
 
-    return {
-        "message": "Resume uploaded successfully!",
-        **result,
-    }
+    return result

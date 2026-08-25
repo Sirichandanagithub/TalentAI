@@ -1,0 +1,112 @@
+{
+    "personal": [
+        "contact",
+        "contact information",
+        "personal information",
+        "personal details"
+    ],
+
+    "summary": [
+        "summary",
+        "professional summary",
+        "profile",
+        "objective",
+        "career objective",
+        "career summary",
+        "executive summary",
+        "about me"
+    ],
+
+    "experience": [
+        "experience",
+        "work experience",
+        "professional experience",
+        "employment history",
+        "career history",
+        "internships",
+        "internship",
+        "work history"
+    ],
+
+    "education": [
+        "education",
+        "academic background",
+        "academic qualification",
+        "qualifications",
+        "qualification",
+        "education details",
+        "educational qualifications"
+    ],
+
+    "projects": [
+        "projects",
+        "project",
+        "academic projects",
+        "personal projects",
+        "key projects",
+        "professional projects"
+    ],
+
+    "skills": [
+        "skills",
+        "technical skills",
+        "technical expertise",
+        "core competencies",
+        "competencies",
+        "technologies",
+        "expertise",
+        "key skills"
+    ],
+
+    "certifications": [
+        "certifications",
+        "certification",
+        "licenses",
+        "license",
+        "courses",
+        "training",
+        "professional certifications"
+    ],
+
+    "achievements": [
+        "achievements",
+        "achievement",
+        "acheivements",
+        "acheivement",
+        "honors",
+        "honours",
+        "awards",
+        "accomplishments",
+        "recognition",
+        "extra curricular activities",
+        "extracurricular activities",
+        "co curricular activities"
+    ],
+
+    "languages": [
+        "languages",
+        "language proficiency"
+    ],
+
+    "interests": [
+        "interests",
+        "hobbies",
+        "activities"
+    ],
+
+    "publications": [
+        "publications",
+        "research publications",
+        "papers"
+    ],
+
+    "volunteering": [
+        "volunteering",
+        "volunteer experience",
+        "community service"
+    ],
+
+    "references": [
+        "references"
+    ]
+}

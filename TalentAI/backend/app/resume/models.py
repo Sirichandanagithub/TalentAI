@@ -4,6 +4,7 @@ from sqlalchemy import (
     ForeignKey,
     Integer,
     String,
+    Text,
 )
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -30,6 +31,11 @@ class Resume(Base):
     file_path = Column(
         String(500),
         nullable=False,
+    )
+
+    resume_text = Column(
+        Text,
+        nullable=True,
     )
 
     uploaded_at = Column(

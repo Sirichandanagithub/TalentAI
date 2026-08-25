@@ -1,0 +1,66 @@
+{
+    "Programming Languages": [
+        "Python",
+        "Java",
+        "JavaScript",
+        "C",
+        "C++",
+        "C#",
+        "Go",
+        "Rust",
+        "PHP",
+        "TypeScript"
+    ],
+
+    "Web Development": [
+        "HTML",
+        "CSS",
+        "Bootstrap",
+        "React",
+        "Angular",
+        "Vue",
+        "FastAPI",
+        "Flask",
+        "Django",
+        "Node.js"
+    ],
+
+    "Databases": [
+        "MySQL",
+        "PostgreSQL",
+        "MongoDB",
+        "SQLite",
+        "Oracle",
+        "Redis"
+    ],
+
+    "Data Science": [
+        "Pandas",
+        "NumPy",
+        "Matplotlib",
+        "Seaborn",
+        "Scikit-learn"
+    ],
+
+    "Machine Learning": [
+        "TensorFlow",
+        "PyTorch",
+        "Keras",
+        "XGBoost",
+        "LightGBM"
+    ],
+
+    "Cloud": [
+        "AWS",
+        "Azure",
+        "Google Cloud"
+    ],
+
+    "DevOps": [
+        "Docker",
+        "Kubernetes",
+        "Git",
+        "GitHub",
+        "Jenkins"
+    ]
+}
