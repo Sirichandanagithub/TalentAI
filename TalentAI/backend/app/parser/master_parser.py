@@ -6,6 +6,7 @@ from app.parser.project_parser import parse_projects
 from app.parser.skill_parser import parse_skills
 from app.parser.certification_parser import parse_certifications
 from app.parser.achievement_parser import parse_achievements
+from app.parser.language_parser import parse_languages
 
 
 # ============================================================
@@ -60,7 +61,12 @@ def extract_summary_from_personal(
 
 def parse_resume(sections: dict):
 
+    # --------------------------------------------------------
+    # EMPTY INPUT
+    # --------------------------------------------------------
+
     if not sections:
+
         return {
             "personal": {},
             "summary": None,
@@ -69,7 +75,8 @@ def parse_resume(sections: dict):
             "projects": [],
             "skills": {},
             "certifications": [],
-            "achievements": []
+            "achievements": [],
+            "languages": []
         }
 
     # --------------------------------------------------------
@@ -90,7 +97,8 @@ def parse_resume(sections: dict):
     # --------------------------------------------------------
 
     summary_text = sections.get(
-        "summary"
+        "summary",
+        ""
     )
 
     if summary_text:
@@ -184,6 +192,19 @@ def parse_resume(sections: dict):
     )
 
     # --------------------------------------------------------
+    # LANGUAGES
+    # --------------------------------------------------------
+
+    languages_text = sections.get(
+        "languages",
+        ""
+    )
+
+    languages = parse_languages(
+        languages_text
+    )
+
+    # --------------------------------------------------------
     # FINAL STRUCTURED RESUME
     # --------------------------------------------------------
 
@@ -195,5 +216,6 @@ def parse_resume(sections: dict):
         "projects": projects,
         "skills": skills,
         "certifications": certifications,
-        "achievements": achievements
+        "achievements": achievements,
+        "languages": languages
     }

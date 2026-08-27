@@ -10,9 +10,10 @@ def clean_project_text(text: str) -> str:
     if not text:
         return ""
 
+    text = text.replace("\r\n", "\n")
     text = text.replace("\r", "\n")
 
-    # Normalize spaces but preserve line breaks
+    # Normalize spaces inside each line
     text = re.sub(r"[ \t]+", " ", text)
 
     # Remove excessive blank lines
@@ -50,24 +51,25 @@ def is_project_heading(line: str) -> bool:
         line
     ).strip()
 
-    upper_line = line.upper()
+    if not line:
+        return False
 
     # --------------------------------------------------------
-    # Known project-name patterns from resume
+    # Known project-name patterns
     # --------------------------------------------------------
 
     known_project_patterns = [
 
         r"^JOB TRACKER APP$",
 
-        r"^ARTIFICIAL INTELLIGENCE\s*-\s*AN OVERVIEW",
+        r"^ARTIFICIAL INTELLIGENCE\s*-\s*AN OVERVIEW$",
 
         r"^VIDEO TRANSCRIPT SUMMARIZER$",
     ]
 
     for pattern in known_project_patterns:
 
-        if re.search(
+        if re.fullmatch(
             pattern,
             line,
             re.IGNORECASE
@@ -75,14 +77,47 @@ def is_project_heading(line: str) -> bool:
             return True
 
     # --------------------------------------------------------
-    # Generic project heading patterns
+    # Generic project-heading patterns
+    # --------------------------------------------------------
+
+    upper_line = line.upper()
+
+    if upper_line.endswith(" APP"):
+        return True
+
+    if upper_line.endswith(" PROJECT"):
+        return True
+
+    if upper_line.endswith(" SYSTEM"):
+        return True
+
+    if upper_line.endswith(" APPLICATION"):
+        return True
+
+    if upper_line.endswith(" PLATFORM"):
+        return True
+
+    if upper_line.endswith(" PORTAL"):
+        return True
+
+    if upper_line.endswith(" SUMMARIZER"):
+        return True
+
+    # --------------------------------------------------------
+    # ALL CAPS short heading
+    #
+    # Example:
+    # JOB TRACKER APP
+    # VIDEO TRANSCRIPT SUMMARIZER
+    #
+    # But do NOT treat normal description sentences
+    # as headings.
     # --------------------------------------------------------
 
     if (
-        upper_line.endswith(" APP")
-        or upper_line.endswith(" PROJECT")
-        or upper_line.endswith(" SYSTEM")
-        or upper_line.endswith(" APPLICATION")
+        line == line.upper()
+        and len(line.split()) <= 8
+        and not re.search(r"[.!?,]$", line)
     ):
         return True
 
@@ -107,7 +142,15 @@ def extract_project_name(text: str):
     if not lines:
         return None
 
-    return lines[0]
+    name = lines[0]
+
+    name = re.sub(
+        r"^[➢•\-]+\s*",
+        "",
+        name
+    ).strip()
+
+    return name if name else None
 
 
 # ============================================================
@@ -140,7 +183,14 @@ def extract_project_description(text: str):
         ):
             continue
 
-        description_lines.append(line)
+        clean_line = re.sub(
+            r"^[➢•\-]+\s*",
+            "",
+            line
+        ).strip()
+
+        if clean_line:
+            description_lines.append(clean_line)
 
     if not description_lines:
         return None
@@ -225,7 +275,6 @@ def extract_project_technologies(text: str):
             text,
             re.IGNORECASE
         ):
-
             found.append(technology)
 
     return found
@@ -234,6 +283,7 @@ def extract_project_technologies(text: str):
 # ============================================================
 # PROJECT ENTRY EXTRACTION
 # ============================================================
+
 def extract_project_entries(text: str):
 
     if not text:
@@ -251,24 +301,8 @@ def extract_project_entries(text: str):
         return []
 
     entries = []
-    current_entry = []
 
-    # Common project-title indicators
-    project_title_keywords = [
-        "app",
-        "application",
-        "system",
-        "project",
-        "summarizer",
-        "tracker",
-        "platform",
-        "website",
-        "portal",
-        "analyzer",
-        "analysis",
-        "prediction",
-        "overview"
-    ]
+    current_entry = []
 
     for line in lines:
 
@@ -278,53 +312,19 @@ def extract_project_entries(text: str):
             line
         ).strip()
 
-        upper_line = clean_line.upper()
+        if not clean_line:
+            continue
 
         # ----------------------------------------------------
-        # Detect likely project heading
+        # ONLY use the centralized heading detector
         # ----------------------------------------------------
 
-        is_heading = False
-
-        # ALL CAPS headings
-        if clean_line == clean_line.upper() and len(clean_line.split()) <= 15:
-            is_heading = True
-
-        # Known project title patterns
-        if any(
-            keyword in clean_line.lower()
-            for keyword in project_title_keywords
-        ):
-            if len(clean_line.split()) <= 15:
-                is_heading = True
+        is_heading = is_project_heading(
+            clean_line
+        )
 
         # ----------------------------------------------------
-        # Prevent description sentences from becoming headings
-        # ----------------------------------------------------
-
-        description_starters = [
-            "developed",
-            "designed",
-            "created",
-            "built",
-            "implemented",
-            "utilized",
-            "used",
-            "provided",
-            "supports",
-            "the",
-            "this",
-            "job tracker app is"
-        ]
-
-        if any(
-            clean_line.lower().startswith(word)
-            for word in description_starters
-        ):
-            is_heading = False
-
-        # ----------------------------------------------------
-        # Start new project
+        # New project detected
         # ----------------------------------------------------
 
         if is_heading and current_entry:
@@ -335,16 +335,9 @@ def extract_project_entries(text: str):
 
             current_entry = []
 
-        current_entry.append(clean_line)
-
-    # Add final project
-    if current_entry:
-
-        entries.append(
-            "\n".join(current_entry)
+        current_entry.append(
+            clean_line
         )
-
-    return entries
 
     # --------------------------------------------------------
     # Add final project
@@ -365,7 +358,9 @@ def extract_project_entries(text: str):
 
 def parse_projects(text: str):
 
-    section = extract_project_section(text)
+    section = extract_project_section(
+        text
+    )
 
     if not section:
         return []
@@ -382,17 +377,20 @@ def parse_projects(text: str):
             {
                 "raw_text": entry,
 
-                "project_name": extract_project_name(
-                    entry
-                ),
+                "project_name":
+                    extract_project_name(
+                        entry
+                    ),
 
-                "description": extract_project_description(
-                    entry
-                ),
+                "description":
+                    extract_project_description(
+                        entry
+                    ),
 
-                "technologies": extract_project_technologies(
-                    entry
-                )
+                "technologies":
+                    extract_project_technologies(
+                        entry
+                    )
             }
         )
 
