@@ -43,6 +43,7 @@ htmlcov/
 
 # Local datasets
 datasets/
+TalentAI/datasets/
 
 # Local test data
 data/*.pdf
