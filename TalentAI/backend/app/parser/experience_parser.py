@@ -309,55 +309,97 @@ def extract_experience_dates(text: str):
         return None
 
     # --------------------------------------------------------
-    # Month + year range
+    # Month names
+    # --------------------------------------------------------
+
+    month_pattern = (
+        r"(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|"
+        r"May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|"
+        r"Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)"
+    )
+
+    # --------------------------------------------------------
+    # Current / ongoing employment keywords
+    # --------------------------------------------------------
+
+    current_pattern = (
+        r"(?:Present|Current|Currently|Till\s+Date|"
+        r"To\s+Date|Until\s+Now|Now)"
+    )
+
+    # --------------------------------------------------------
+    # Month + Year -> Present
+    #
+    # Example:
+    # April 2025 - Present
+    # May 2026 - Current
+    # --------------------------------------------------------
+
+    current_date_range_pattern = re.search(
+        rf"\b("
+        rf"{month_pattern}\s+(?:19|20)\d{{2}}"
+        rf"|"
+        rf"(?:19|20)\d{{2}}"
+        rf")"
+        rf"\s*[-–—]\s*"
+        rf"({current_pattern})\b",
+        text,
+        re.IGNORECASE
+    )
+
+    if current_date_range_pattern:
+
+        start = current_date_range_pattern.group(1).strip()
+        end = current_date_range_pattern.group(2).strip()
+
+        return {
+            "start": start,
+            "end": end,
+            "current": True
+        }
+
+    # --------------------------------------------------------
+    # Month + Year range
+    #
+    # Example:
+    # April 2024 - May 2025
+    # 2023 - 2025
     # --------------------------------------------------------
 
     date_range_pattern = re.search(
-        r"\b("
-        r"(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|"
-        r"May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|"
-        r"Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)"
-        r"\s+)?"
-        r"(19|20)\d{2}"
-        r"\s*[-–—]\s*"
-        r"("
-        r"(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|"
-        r"May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|"
-        r"Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)"
-        r"\s+)?"
-        r"(19|20)\d{2}\b",
+        rf"\b("
+        rf"(?:{month_pattern}\s+)?(?:19|20)\d{{2}}"
+        rf")"
+        rf"\s*[-–—]\s*"
+        rf"("
+        rf"(?:{month_pattern}\s+)?(?:19|20)\d{{2}}"
+        rf")\b",
         text,
         re.IGNORECASE
     )
 
     if date_range_pattern:
 
-        date_text = date_range_pattern.group(0)
-
-        parts = re.split(
-            r"\s*[-–—]\s*",
-            date_text
-        )
+        start = date_range_pattern.group(1).strip()
+        end = date_range_pattern.group(2).strip()
 
         return {
-            "start": parts[0].strip(),
-            "end": parts[1].strip()
-            if len(parts) > 1
-            else None
+            "start": start,
+            "end": end,
+            "current": False
         }
 
     # --------------------------------------------------------
-    # Month + year
+    # Single Month + Year
+    #
+    # Example:
+    # April 2025
     # --------------------------------------------------------
 
     single_date_pattern = re.search(
-        r"\b("
-        r"(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|"
-        r"May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|"
-        r"Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)"
-        r"\s+"
-        r"(19|20)\d{2}"
-        r")\b",
+        rf"\b("
+        rf"{month_pattern}\s+(?:19|20)\d{{2}}"
+        rf")\b",
         text,
         re.IGNORECASE
     )
@@ -365,32 +407,39 @@ def extract_experience_dates(text: str):
     if single_date_pattern:
 
         return {
-            "start": single_date_pattern.group(1),
-            "end": None
+            "start": single_date_pattern.group(1).strip(),
+            "end": None,
+            "current": False
         }
 
     # --------------------------------------------------------
-    # Year
+    # Single Year
+    #
+    # Example:
+    # 2025
     # --------------------------------------------------------
 
     year_pattern = re.search(
-        r"\b(19|20)\d{2}\b",
+        r"\b((?:19|20)\d{2})\b",
         text
     )
 
     if year_pattern:
 
         return {
-            "start": year_pattern.group(0),
-            "end": None
+            "start": year_pattern.group(1),
+            "end": None,
+            "current": False
         }
 
     return None
-
-
+# ============================================================
+# EXPERIENCE ENTRY EXTRACTION
+# ============================================================
 # ============================================================
 # DESCRIPTION
 # ============================================================
+
 def extract_experience_description(text: str):
 
     if not text:
@@ -409,15 +458,24 @@ def extract_experience_description(text: str):
 
     for index, line in enumerate(lines):
 
+        # ----------------------------------------------------
         # Skip job title
+        # ----------------------------------------------------
+
         if index == 0:
             continue
 
+        # ----------------------------------------------------
         # Skip company / organization line
+        # ----------------------------------------------------
+
         if index == 1:
             continue
 
+        # ----------------------------------------------------
         # Skip date-only lines
+        # ----------------------------------------------------
+
         if re.fullmatch(
             r"\[\s*("
             r"(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|"
@@ -431,7 +489,10 @@ def extract_experience_description(text: str):
         ):
             continue
 
+        # ----------------------------------------------------
         # Skip lines containing only a date
+        # ----------------------------------------------------
+
         if re.fullmatch(
             r"("
             r"(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|"
@@ -444,15 +505,29 @@ def extract_experience_description(text: str):
         ):
             continue
 
-        description_lines.append(line)
+        # ----------------------------------------------------
+        # Skip current employment date markers
+        # ----------------------------------------------------
+
+        if re.fullmatch(
+            r"(?:Present|Current|Currently|Till\s+Date|"
+            r"To\s+Date|Until\s+Now|Now)",
+            line,
+            re.IGNORECASE
+        ):
+            continue
+
+        description_lines.append(
+            line
+        )
 
     if not description_lines:
         return None
 
-    return " ".join(description_lines)
-# ============================================================
-# EXPERIENCE ENTRY EXTRACTION
-# ============================================================
+    return " ".join(
+        description_lines
+    )
+
 
 def extract_experience_entries(text: str):
 

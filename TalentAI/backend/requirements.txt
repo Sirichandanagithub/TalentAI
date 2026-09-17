@@ -84,3 +84,6 @@ loguru
 # =====================================================
 pytest
 pytest-asyncio
+
+
+sentence-transformers

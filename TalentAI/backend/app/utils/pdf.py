@@ -22,3 +22,5 @@ def extract_text_from_pdf(pdf_path: str) -> str:
     document.close()
 
     return text.strip()
+
+    

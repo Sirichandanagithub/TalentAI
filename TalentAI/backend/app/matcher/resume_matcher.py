@@ -1,5 +1,18 @@
 import re
 
+from app.matcher.semantic_matcher import (
+    match_concept,
+    match_requirements
+)
+
+from app.matcher.experience_matcher import (
+    match_experience
+)
+
+from app.matcher.education_matcher import (
+    match_education
+)
+
 
 # ============================================================
 # NORMALIZE TEXT
@@ -17,9 +30,21 @@ def normalize_text(text: str) -> str:
     text = text.replace("_", " ")
 
     # Remove extra spaces
-    text = re.sub(r"\s+", " ", text)
+    text = re.sub(
+        r"\s+",
+        " ",
+        text
+    )
 
-    return text
+    return normalize_text_basic(text)
+
+
+def normalize_text_basic(text: str) -> str:
+
+    if not text:
+        return ""
+
+    return text.strip()
 
 
 # ============================================================
@@ -28,14 +53,18 @@ def normalize_text(text: str) -> str:
 
 def normalize_skill(skill: str) -> str:
 
-    return normalize_text(skill)
+    return normalize_text(
+        skill
+    )
 
 
 # ============================================================
 # COLLECT RESUME SKILLS
 # ============================================================
 
-def collect_resume_skills(resume: dict) -> list:
+def collect_resume_skills(
+    resume: dict
+) -> list:
 
     if not resume:
         return []
@@ -65,7 +94,10 @@ def collect_resume_skills(resume: dict) -> list:
             skills
         )
 
+    # --------------------------------------------------------
     # Also collect technologies from projects
+    # --------------------------------------------------------
+
     projects = resume.get(
         "projects",
         []
@@ -98,8 +130,12 @@ def collect_resume_skills(resume: dict) -> list:
                     technologies
                 )
 
-    # Remove duplicates while preserving order
+    # --------------------------------------------------------
+    # Remove duplicates
+    # --------------------------------------------------------
+
     unique_skills = []
+
     seen = set()
 
     for skill in all_skills:
@@ -140,270 +176,93 @@ def match_skills(
     preferred_skills: list
 ) -> dict:
 
-    resume_map = {
-        normalize_skill(skill): skill
-        for skill in resume_skills
-    }
-
-    required_matches = []
-    required_missing = []
-    required_unknown = []
-
     # --------------------------------------------------------
     # Required skills
     # --------------------------------------------------------
 
-    for skill in required_skills:
-
-        normalized = normalize_skill(
-            skill
-        )
-
-        if normalized in resume_map:
-
-            required_matches.append(
-                skill
-            )
-
-        else:
-
-            # At this stage we cannot know whether
-            # the candidate actually has the skill.
-            # The resume simply doesn't mention it.
-            required_unknown.append(
-                skill
-            )
+    required_results = match_requirements(
+        required_skills,
+        resume_skills
+    )
 
     # --------------------------------------------------------
     # Preferred skills
     # --------------------------------------------------------
 
-    preferred_matches = []
+    preferred_results = match_requirements(
+        preferred_skills,
+        resume_skills
+    )
+
+    # --------------------------------------------------------
+    # Separate required results
+    # --------------------------------------------------------
+
+    required_matched = []
+    required_unknown = []
+
+    for result in required_results:
+
+        if result["status"] in [
+            "exact",
+            "related"
+        ]:
+
+            required_matched.append(
+                result
+            )
+
+        else:
+
+            required_unknown.append(
+                result
+            )
+
+    # --------------------------------------------------------
+    # Separate preferred results
+    # --------------------------------------------------------
+
+    preferred_matched = []
     preferred_unknown = []
 
-    for skill in preferred_skills:
+    for result in preferred_results:
 
-        normalized = normalize_skill(
-            skill
-        )
+        if result["status"] in [
+            "exact",
+            "related"
+        ]:
 
-        if normalized in resume_map:
-
-            preferred_matches.append(
-                skill
+            preferred_matched.append(
+                result
             )
 
         else:
 
             preferred_unknown.append(
-                skill
+                result
             )
 
     return {
+
         "required": {
-            "matched": required_matches,
-            "unknown": required_unknown,
-            "missing": required_missing
+
+            "matched":
+                required_matched,
+
+            "unknown":
+                required_unknown,
+
+            "missing": []
         },
 
         "preferred": {
-            "matched": preferred_matches,
-            "unknown": preferred_unknown
+
+            "matched":
+                preferred_matched,
+
+            "unknown":
+                preferred_unknown
         }
-    }
-
-
-# ============================================================
-# EXPERIENCE MATCHING
-# ============================================================
-
-def extract_resume_experience_years(
-    resume: dict
-):
-
-    if not resume:
-        return None
-
-    experiences = resume.get(
-        "experience",
-        []
-    )
-
-    if not isinstance(
-        experiences,
-        list
-    ):
-        return None
-
-    # --------------------------------------------------------
-    # We currently do NOT calculate years automatically.
-    #
-    # The resume parser currently gives us dates such as:
-    #
-    # {'start': 'April 2025', 'end': None}
-    #
-    # We don't yet have enough information to reliably
-    # calculate total experience for every resume format.
-    # --------------------------------------------------------
-
-    if not experiences:
-
-        return None
-
-    return None
-
-
-def match_experience(
-    resume: dict,
-    required_experience: dict | None
-) -> dict:
-
-    if not required_experience:
-
-        return {
-            "status": "not_required",
-            "required_years": None,
-            "candidate_years": None
-        }
-
-    required_years = required_experience.get(
-        "minimum_years"
-    )
-
-    if required_years is None:
-
-        return {
-            "status": "unknown",
-            "required_years": None,
-            "candidate_years": None
-        }
-
-    candidate_years = extract_resume_experience_years(
-        resume
-    )
-
-    # --------------------------------------------------------
-    # We don't invent experience.
-    # --------------------------------------------------------
-
-    if candidate_years is None:
-
-        return {
-            "status": "unknown",
-            "required_years": required_years,
-            "candidate_years": None
-        }
-
-    if candidate_years >= required_years:
-
-        status = "matched"
-
-    else:
-
-        status = "partial"
-
-    return {
-        "status": status,
-        "required_years": required_years,
-        "candidate_years": candidate_years
-    }
-
-
-# ============================================================
-# EDUCATION MATCHING
-# ============================================================
-
-def match_education(
-    resume: dict,
-    required_education: list
-) -> dict:
-
-    if not required_education:
-
-        return {
-            "status": "not_required",
-            "matched": [],
-            "unknown": []
-        }
-
-    education_entries = resume.get(
-        "education",
-        []
-    )
-
-    if not education_entries:
-
-        return {
-            "status": "unknown",
-            "matched": [],
-            "unknown": required_education
-        }
-
-    resume_text_parts = []
-
-    for education in education_entries:
-
-        if not isinstance(
-            education,
-            dict
-        ):
-            continue
-
-        for key in [
-            "institution",
-            "program",
-            "location"
-        ]:
-
-            value = education.get(
-                key
-            )
-
-            if value:
-
-                resume_text_parts.append(
-                    str(value)
-                )
-
-    resume_text = normalize_text(
-        " ".join(
-            resume_text_parts
-        )
-    )
-
-    matched = []
-    unknown = []
-
-    for requirement in required_education:
-
-        normalized = normalize_text(
-            requirement
-        )
-
-        if normalized in resume_text:
-
-            matched.append(
-                requirement
-            )
-
-        else:
-
-            unknown.append(
-                requirement
-            )
-
-    if matched:
-
-        status = "matched"
-
-    else:
-
-        status = "unknown"
-
-    return {
-        "status": status,
-        "matched": matched,
-        "unknown": unknown
     }
 
 
@@ -452,11 +311,13 @@ def match_projects(
         )
 
         if project_name:
+
             project_text.append(
                 str(project_name)
             )
 
         if description:
+
             project_text.append(
                 str(description)
             )
@@ -517,17 +378,17 @@ def match_resume_to_job(
     if not job_description:
         job_description = {}
 
-    # --------------------------------------------------------
-    # Resume skills
-    # --------------------------------------------------------
+    # ========================================================
+    # RESUME SKILLS
+    # ========================================================
 
     resume_skills = collect_resume_skills(
         resume
     )
 
-    # --------------------------------------------------------
-    # Job skills
-    # --------------------------------------------------------
+    # ========================================================
+    # JOB SKILLS
+    # ========================================================
 
     required_skills = job_description.get(
         "required_skills",
@@ -539,9 +400,9 @@ def match_resume_to_job(
         []
     )
 
-    # --------------------------------------------------------
-    # Skill matching
-    # --------------------------------------------------------
+    # ========================================================
+    # SKILL MATCHING
+    # ========================================================
 
     skill_matches = match_skills(
         resume_skills,
@@ -549,9 +410,9 @@ def match_resume_to_job(
         preferred_skills
     )
 
-    # --------------------------------------------------------
-    # Experience
-    # --------------------------------------------------------
+    # ========================================================
+    # EXPERIENCE MATCHING
+    # ========================================================
 
     experience_match = match_experience(
         resume,
@@ -560,9 +421,9 @@ def match_resume_to_job(
         )
     )
 
-    # --------------------------------------------------------
-    # Education
-    # --------------------------------------------------------
+    # ========================================================
+    # EDUCATION MATCHING
+    # ========================================================
 
     education_match = match_education(
         resume,
@@ -572,18 +433,18 @@ def match_resume_to_job(
         )
     )
 
-    # --------------------------------------------------------
-    # Projects
-    # --------------------------------------------------------
+    # ========================================================
+    # PROJECT MATCHING
+    # ========================================================
 
     project_match = match_projects(
         resume,
         required_skills
     )
 
-    # --------------------------------------------------------
-    # Final result
-    # --------------------------------------------------------
+    # ========================================================
+    # FINAL RESULT
+    # ========================================================
 
     return {
 

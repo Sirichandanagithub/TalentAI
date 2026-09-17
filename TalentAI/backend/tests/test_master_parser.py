@@ -80,29 +80,47 @@ NPTEL Online exam Qualified
 
 Data Engineering with Hadoop and Spark
 GeeksforGeeks
+
+ACHIEVEMENTS
+
+NSS CO-ORDINATOR (National Service Scheme)
+Coordinated National Service Scheme (NSS) activities, promoting community service and social responsibility.
+Led team of volunteers in organizing events, camps, and projects, fostering teamwork and leadership skills.
+
+CSI CO-ORDINATOR (Computer Society)
+Coordinated Computer Society activities.
+Organized technical events and encouraged student participation.
+
+LANGUAGES
+
+English
+Hindi
+Telugu
 """
 
 
 # ============================================================
-# ============================================================
-# SECTION DETECTION
+# STEP 1: SECTION DETECTION
 # ============================================================
 
 print("=" * 60)
 print("STEP 1: SECTION DETECTION")
 print("=" * 60)
 
+
 sections = extract_sections(
     resume_text
 )
 
+
 # ============================================================
-# TEMPORARY DEBUG - RAW EXTRACTED SECTIONS
+# RAW EXTRACTED SECTIONS
 # ============================================================
 
 print("\n" + "=" * 60)
 print("RAW EXTRACTED SECTIONS")
 print("=" * 60)
+
 
 for section_name, section_text in sections.items():
 
@@ -112,13 +130,10 @@ for section_name, section_text in sections.items():
 
     print(section_text)
 
-print("\nDetected sections:")
 
-for section_name in sections:
-
-    print(
-        f" - {section_name}"
-    )
+# ============================================================
+# DETECTED SECTION NAMES
+# ============================================================
 
 print("\nDetected sections:")
 
@@ -130,12 +145,13 @@ for section_name in sections:
 
 
 # ============================================================
-# MASTER PARSER
+# STEP 2: MASTER PARSER
 # ============================================================
 
 print("\n" + "=" * 60)
 print("STEP 2: MASTER PARSER")
 print("=" * 60)
+
 
 result = parse_resume(
     sections
@@ -147,7 +163,10 @@ result = parse_resume(
 # ============================================================
 
 print("\n## PERSONAL")
-print(result["personal"])
+
+print(
+    result["personal"]
+)
 
 
 # ============================================================
@@ -155,7 +174,10 @@ print(result["personal"])
 # ============================================================
 
 print("\n## SUMMARY")
-print(result["summary"])
+
+print(
+    result["summary"]
+)
 
 
 # ============================================================
@@ -164,13 +186,17 @@ print(result["summary"])
 
 print("\n## EDUCATION")
 
+
 for index, education in enumerate(
     result["education"],
     start=1
 ):
 
     print(f"\n[{index}]")
-    print(education)
+
+    print(
+        education
+    )
 
 
 # ============================================================
@@ -179,13 +205,17 @@ for index, education in enumerate(
 
 print("\n## EXPERIENCE")
 
+
 for index, experience in enumerate(
     result["experience"],
     start=1
 ):
 
     print(f"\n[{index}]")
-    print(experience)
+
+    print(
+        experience
+    )
 
 
 # ============================================================
@@ -194,13 +224,17 @@ for index, experience in enumerate(
 
 print("\n## PROJECTS")
 
+
 for index, project in enumerate(
     result["projects"],
     start=1
 ):
 
     print(f"\n[{index}]")
-    print(project)
+
+    print(
+        project
+    )
 
 
 # ============================================================
@@ -208,7 +242,10 @@ for index, project in enumerate(
 # ============================================================
 
 print("\n## SKILLS")
-print(result["skills"])
+
+print(
+    result["skills"]
+)
 
 
 # ============================================================
@@ -217,19 +254,17 @@ print(result["skills"])
 
 print("\n## CERTIFICATIONS")
 
+
 for index, certification in enumerate(
     result["certifications"],
     start=1
 ):
 
     print(f"\n[{index}]")
-    print(certification)
 
-
-print("\n")
-print("=" * 60)
-print("MASTER PARSER TEST FINISHED")
-print("=" * 60)
+    print(
+        certification
+    )
 
 
 # ============================================================
@@ -238,16 +273,48 @@ print("=" * 60)
 
 print("\n## ACHIEVEMENTS")
 
+
 for index, achievement in enumerate(
     result["achievements"],
     start=1
 ):
 
     print(f"\n[{index}]")
-    print(achievement)
 
+    print(
+        achievement
+    )
+
+
+# ============================================================
+# LANGUAGES
+# ============================================================
+
+print("\n## LANGUAGES")
+
+
+for index, language in enumerate(
+    result["languages"],
+    start=1
+):
+
+    print(f"\n[{index}]")
+
+    print(
+        language
+    )
+
+
+# ============================================================
+# TEST FINISHED
+# ============================================================
 
 print("\n")
+
 print("=" * 60)
-print("MASTER PARSER TEST FINISHED")
+
+print(
+    "MASTER PARSER TEST FINISHED"
+)
+
 print("=" * 60)

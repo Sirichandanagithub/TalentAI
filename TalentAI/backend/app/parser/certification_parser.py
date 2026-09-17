@@ -10,17 +10,34 @@ def clean_certification_text(text: str) -> str:
     if not text:
         return ""
 
+    text = text.replace("\r\n", "\n")
     text = text.replace("\r", "\n")
 
-    # Normalize bullet characters
+    # Normalize bullets
     text = text.replace("➢", "-")
     text = text.replace("•", "-")
 
+    # Fix PDF extraction:
+    # Qualifie2023 -> Qualifie 2023
+    text = re.sub(
+        r"([A-Za-z])((?:19|20)\d{2})\b",
+        r"\1 \2",
+        text
+    )
+
     # Normalize spaces
-    text = re.sub(r"[ \t]+", " ", text)
+    text = re.sub(
+        r"[ \t]+",
+        " ",
+        text
+    )
 
     # Remove excessive blank lines
-    text = re.sub(r"\n+", "\n", text)
+    text = re.sub(
+        r"\n+",
+        "\n",
+        text
+    )
 
     return text.strip()
 
@@ -48,7 +65,10 @@ def extract_certification_date(text: str):
     if not text:
         return None
 
-    # Month + year
+    # --------------------------------------------------------
+    # Month + Year
+    # --------------------------------------------------------
+
     month_match = re.search(
         r"\b("
         r"January|February|March|April|May|June|"
@@ -59,16 +79,21 @@ def extract_certification_date(text: str):
     )
 
     if month_match:
-        return month_match.group()
 
+        return month_match.group(0)
+
+    # --------------------------------------------------------
     # Standalone year
+    # --------------------------------------------------------
+
     year_match = re.search(
-        r"\b(19|20)\d{2}\b",
+        r"\b(?:19|20)\d{2}\b",
         text
     )
 
     if year_match:
-        return year_match.group()
+
+        return year_match.group(0)
 
     return None
 
@@ -77,19 +102,42 @@ def extract_certification_date(text: str):
 # ISSUER EXTRACTION
 # ============================================================
 
+KNOWN_ISSUERS = [
+
+    "NPTEL",
+    "Coursera",
+    "Udemy",
+    "GeeksforGeeks",
+    "IBM",
+    "Microsoft",
+    "Google",
+    "AWS",
+    "Cisco",
+    "Oracle",
+    "Infosys",
+    "TCS",
+    "Salesforce"
+]
+
+
 def extract_certification_issuer(text: str):
 
     if not text:
         return None
 
+    # --------------------------------------------------------
     # Explicit issuer patterns
+    # --------------------------------------------------------
+
     issuer_patterns = [
 
         r"\bissued\s+by\s+(.+?)(?:\s+\d{4}|$)",
 
-        r"\bby\s+(.+?)(?:\s+\d{4}|$)",
+        r"\bprovided\s+by\s+(.+?)(?:\s+\d{4}|$)",
 
-        r"\bfrom\s+(.+?)(?:\s+\d{4}|$)"
+        r"\bcertified\s+by\s+(.+?)(?:\s+\d{4}|$)",
+
+        r"\bby\s+(.+?)(?:\s+\d{4}|$)"
     ]
 
     for pattern in issuer_patterns:
@@ -105,26 +153,14 @@ def extract_certification_issuer(text: str):
             issuer = match.group(1).strip()
 
             if issuer:
+
                 return issuer
 
+    # --------------------------------------------------------
+    # Known issuers
+    # --------------------------------------------------------
 
-    # Known certification issuers
-    known_issuers = [
-        "NPTEL",
-        "Coursera",
-        "Udemy",
-        "GeeksforGeeks",
-        "IBM",
-        "Microsoft",
-        "Google",
-        "AWS",
-        "Cisco",
-        "Oracle",
-        "Infosys",
-        "TCS"
-    ]
-
-    for issuer in known_issuers:
+    for issuer in KNOWN_ISSUERS:
 
         if re.search(
             rf"\b{re.escape(issuer)}\b",
@@ -157,12 +193,19 @@ def extract_certification_name(text: str):
 
     name = lines[0]
 
-    # Remove bullet characters
     name = re.sub(
-        r"^[\-\u2022➢]+",
+        r"^[-•➢]+\s*",
         "",
         name
     ).strip()
+
+    # Do not allow a year to become certification name
+    if re.fullmatch(
+        r"(19|20)\d{2}",
+        name
+    ):
+
+        return None
 
     return name if name else None
 
@@ -196,9 +239,9 @@ def extract_certification_description(text: str):
         ):
             continue
 
-        # Remove leading bullets
+        # Remove bullet
         line = re.sub(
-            r"^[\-\u2022➢]+\s*",
+            r"^[-•➢]+\s*",
             "",
             line
         ).strip()
@@ -206,12 +249,123 @@ def extract_certification_description(text: str):
         if not line:
             continue
 
-        description_lines.append(line)
+        # Do not treat issuer-only lines as descriptions
+        if any(
+            line.lower() == issuer.lower()
+            for issuer in KNOWN_ISSUERS
+        ):
+            continue
+
+        # Credential verification information
+        if re.search(
+            r"credential\s+id",
+            line,
+            re.IGNORECASE
+        ):
+            continue
+
+        if re.search(
+            r"certification\s+verification",
+            line,
+            re.IGNORECASE
+        ):
+            continue
+
+        description_lines.append(
+            line
+        )
 
     if not description_lines:
         return None
 
-    return " ".join(description_lines)
+    return " ".join(
+        description_lines
+    )
+
+
+# ============================================================
+# CERTIFICATION TITLE DETECTION
+# ============================================================
+
+def is_certification_title(line: str) -> bool:
+
+    if not line:
+        return False
+
+    line = re.sub(
+        r"^[-•➢]+\s*",
+        "",
+        line
+    ).strip()
+
+    if not line:
+        return False
+
+    # A year can NEVER be a title
+    if re.fullmatch(
+        r"(19|20)\d{2}",
+        line
+    ):
+        return False
+
+    lower_line = line.lower()
+
+    # --------------------------------------------------------
+    # Known certification names
+    # --------------------------------------------------------
+
+    known_titles = [
+
+        "frontend with html and css",
+
+        "problem solving through programming in c",
+
+        "data engineering with hadoop and spark",
+
+        "agentforce specialist"
+    ]
+
+    for title in known_titles:
+
+        if lower_line == title:
+
+            return True
+
+    # --------------------------------------------------------
+    # Strong certification keywords
+    # --------------------------------------------------------
+
+    certification_keywords = [
+
+        "certification",
+        "certificate",
+        "specialist",
+        "professional"
+    ]
+
+    if any(
+        keyword in lower_line
+        for keyword in certification_keywords
+    ):
+
+        return True
+
+    # --------------------------------------------------------
+    # ALL CAPS title
+    # --------------------------------------------------------
+
+    if (
+        line == line.upper()
+        and len(line.split()) <= 10
+        and not re.search(
+            r"[.!?,]$",
+            line
+        )
+    ):
+
+        return True
+
+    return False
 
 
 # ============================================================
@@ -240,61 +394,54 @@ def extract_certification_entries(text: str):
 
     for line in lines:
 
-        upper_line = line.upper()
+        clean_line = re.sub(
+            r"^[-•➢]+\s*",
+            "",
+            line
+        ).strip()
+
+        if not clean_line:
+            continue
 
         # ----------------------------------------------------
-        # Detect a new certification
+        # Detect new certification
         # ----------------------------------------------------
 
-        is_new_certification = False
+        new_certification = is_certification_title(
+            clean_line
+        )
 
-        # A line containing certification/certificate
+        # ----------------------------------------------------
+        # Start a new entry ONLY when we already have one
+        # ----------------------------------------------------
+
         if (
-            "CERTIFICATION" in upper_line
-            or "CERTIFICATE" in upper_line
+            new_certification
+            and current_entry
         ):
-            is_new_certification = True
-
-        # If current entry already contains a year and
-        # the current line looks like a new title,
-        # start a new entry.
-        elif current_entry:
-
-            current_has_date = any(
-                re.search(
-                    r"\b(19|20)\d{2}\b",
-                    previous_line
-                )
-                for previous_line in current_entry
-            )
-
-            looks_like_title = (
-                len(line.split()) >= 2
-                and not line.startswith("-")
-            )
-
-            if current_has_date and looks_like_title:
-                is_new_certification = True
-
-        # ----------------------------------------------------
-        # Start new certification
-        # ----------------------------------------------------
-
-        if is_new_certification and current_entry:
 
             entries.append(
-                "\n".join(current_entry)
+                "\n".join(
+                    current_entry
+                )
             )
 
             current_entry = []
 
-        current_entry.append(line)
+        current_entry.append(
+            clean_line
+        )
 
+    # --------------------------------------------------------
     # Add final entry
+    # --------------------------------------------------------
+
     if current_entry:
 
         entries.append(
-            "\n".join(current_entry)
+            "\n".join(
+                current_entry
+            )
         )
 
     return entries
@@ -306,7 +453,9 @@ def extract_certification_entries(text: str):
 
 def parse_certifications(text: str):
 
-    section = extract_certification_section(text)
+    section = extract_certification_section(
+        text
+    )
 
     if not section:
         return []
@@ -319,14 +468,20 @@ def parse_certifications(text: str):
 
     for entry in raw_entries:
 
+        name = extract_certification_name(
+            entry
+        )
+
+        # Skip invalid entries
+        if not name:
+            continue
+
         parsed_certifications.append(
             {
                 "raw_text": entry,
 
                 "certification_name":
-                    extract_certification_name(
-                        entry
-                    ),
+                    name,
 
                 "issuer":
                     extract_certification_issuer(
