@@ -145,13 +145,15 @@ class RelevantExperienceAnalyzer:
 
         if "@" in role_title_clean:
             role_title_clean = (
-                role_title_clean.split("@")[0]
+                role_title_clean
+                .split("@")[0]
                 .strip()
             )
 
         if "[" in role_title_clean:
             role_title_clean = (
-                role_title_clean.split("[")[0]
+                role_title_clean
+                .split("[")[0]
                 .strip()
             )
 
@@ -195,7 +197,7 @@ class RelevantExperienceAnalyzer:
                 "ai",
                 "artificial",
                 "intelligence",
-                "ml"
+                "ml",
             },
             "machine learning engineer": {
                 "machine",
@@ -204,7 +206,7 @@ class RelevantExperienceAnalyzer:
                 "ai",
                 "artificial",
                 "intelligence",
-                "data"
+                "data",
             },
             "ai engineer": {
                 "ai",
@@ -213,9 +215,65 @@ class RelevantExperienceAnalyzer:
                 "machine",
                 "learning",
                 "ml",
-                "data"
-            }
+                "data",
+            },
         }
+
+        # --------------------------------------------------------
+        # Normalize common seniority / level prefixes
+        # --------------------------------------------------------
+
+        role_title_family = role_title_clean
+
+        for prefix in (
+            "associate",
+            "junior",
+            "senior",
+            "lead",
+            "staff",
+            "principal",
+            "intern",
+        ):
+            if role_title_family.startswith(
+                prefix + " "
+            ):
+                role_title_family = (
+                    role_title_family[
+                        len(prefix):
+                    ]
+                    .strip()
+                )
+
+        # --------------------------------------------------------
+        # Explicit AI / Data role relationships
+        # --------------------------------------------------------
+
+        related_role_pairs = {
+            ("data scientist", "ai engineer"),
+            (
+                "data scientist",
+                "machine learning engineer"
+            ),
+            ("ai engineer", "data scientist"),
+            (
+                "ai engineer",
+                "machine learning engineer"
+            ),
+            (
+                "machine learning engineer",
+                "data scientist"
+            ),
+            (
+                "machine learning engineer",
+                "ai engineer"
+            ),
+        }
+
+        if (
+            target_title,
+            role_title_family
+        ) in related_role_pairs:
+            return 0.50
 
         target_related_terms = (
             related_role_terms.get(
@@ -225,8 +283,9 @@ class RelevantExperienceAnalyzer:
         )
 
         if target_related_terms:
+
             role_words = set(
-                role_title_clean.split()
+                role_title_family.split()
             )
 
             related_overlap = (
@@ -247,12 +306,28 @@ class RelevantExperienceAnalyzer:
     def _calculate_skill_relevance(
         self,
         role: dict,
-        required_skills: list
+        required_skills: list,
+        resume: dict | None = None
     ) -> tuple[float, list, list, list]:
         """
-        Calculate relevance based on skills.
+        Calculate how strongly the candidate's experience role
+        is related to the required skills.
+
+        Evidence can come from:
+
+            1. The specific experience role
+            2. Candidate-level skills
+            3. Candidate-level projects
+
+        Important:
+
+            Candidate-level skills and project evidence establish
+            relevance only.
+
+            They do NOT add employment duration.
 
         Returns:
+
             (
                 score,
                 matched_skills,
@@ -261,7 +336,10 @@ class RelevantExperienceAnalyzer:
             )
         """
 
+        resume = resume or {}
+
         if not required_skills:
+
             return (
                 0.0,
                 [],
@@ -269,9 +347,9 @@ class RelevantExperienceAnalyzer:
                 []
             )
 
-        # --------------------------------------------------------
-        # Collect all text from role
-        # --------------------------------------------------------
+        # ========================================================
+        # 1. BUILD TEXT FROM EXPERIENCE ROLE
+        # ========================================================
 
         role_text_parts = []
 
@@ -280,11 +358,12 @@ class RelevantExperienceAnalyzer:
             "company",
             "description",
             "raw_text",
-            "location"
+            "location",
         ]:
 
             value = role.get(
-                key
+                key,
+                ""
             )
 
             if value:
@@ -292,9 +371,9 @@ class RelevantExperienceAnalyzer:
                     str(value)
                 )
 
-        # --------------------------------------------------------
-        # Skills may already be present
-        # --------------------------------------------------------
+        # ========================================================
+        # 2. ADD SKILLS ATTACHED TO ROLE
+        # ========================================================
 
         role_skills = role.get(
             "skills",
@@ -317,6 +396,7 @@ class RelevantExperienceAnalyzer:
                         [
                             str(value)
                             for value in values
+                            if value
                         ]
                     )
 
@@ -333,190 +413,367 @@ class RelevantExperienceAnalyzer:
 
             role_text_parts.extend(
                 [
-                    str(skill)
-                    for skill in role_skills
+                    str(value)
+                    for value in role_skills
+                    if value
                 ]
             )
 
-        role_text = " ".join(
-            role_text_parts
-        ).lower()
+        elif role_skills:
 
-        matched_skills = []
-        possible_skills = []
-        unknown_skills = []
+            role_text_parts.append(
+                str(role_skills)
+            )
 
         # ========================================================
-        # ALIASES
+        # 3. BUILD CANDIDATE-LEVEL SKILL TEXT
+        # ========================================================
+
+        candidate_skills = resume.get(
+            "skills",
+            []
+        )
+
+        if isinstance(
+            candidate_skills,
+            list
+        ):
+
+            candidate_skill_text = " ".join(
+                [
+                    str(skill)
+                    for skill in candidate_skills
+                    if skill
+                ]
+            )
+
+        elif candidate_skills:
+
+            candidate_skill_text = str(
+                candidate_skills
+            )
+
+        else:
+
+            candidate_skill_text = ""
+
+        # ========================================================
+        # 4. BUILD PROJECT EVIDENCE
+        # ========================================================
+
+        project_text_parts = []
+
+        projects = resume.get(
+            "projects",
+            []
+        )
+
+        if not isinstance(
+            projects,
+            list
+        ):
+
+            projects = [
+                projects
+            ]
+
+        for project in projects:
+
+            if isinstance(
+                project,
+                dict
+            ):
+
+                for key in [
+                    "project_name",
+                    "name",
+                    "title",
+                    "description",
+                    "raw_text",
+                    "technologies",
+                    "skills",
+                ]:
+
+                    value = project.get(
+                        key,
+                        ""
+                    )
+
+                    if not value:
+                        continue
+
+                    if isinstance(
+                        value,
+                        list
+                    ):
+
+                        project_text_parts.extend(
+                            [
+                                str(item)
+                                for item in value
+                                if item
+                            ]
+                        )
+
+                    else:
+
+                        project_text_parts.append(
+                            str(value)
+                        )
+
+            elif project:
+
+                project_text_parts.append(
+                    str(project)
+                )
+
+        project_text = " ".join(
+            project_text_parts
+        )
+
+        # ========================================================
+        # 5. NORMALIZE EVIDENCE
+        # ========================================================
+
+        role_text_normalized = (
+            self._normalize_text(
+                " ".join(
+                    role_text_parts
+                )
+            )
+        )
+
+        candidate_skill_text_normalized = (
+            self._normalize_text(
+                candidate_skill_text
+            )
+        )
+
+        project_text_normalized = (
+            self._normalize_text(
+                project_text
+            )
+        )
+
+        # ========================================================
+        # 6. ALIASES
         # ========================================================
 
         aliases = {
             "python": [
                 "python",
-                "py"
+                "py",
             ],
 
             "sql": [
                 "sql",
                 "mysql",
                 "postgresql",
-                "postgres"
+                "postgres",
             ],
 
             "machine learning": [
                 "machine learning",
-                "ml"
+                "ml",
             ],
 
             "artificial intelligence": [
                 "artificial intelligence",
-                "ai"
+                "ai",
+            ],
+
+            "deep learning": [
+                "deep learning",
+                "dl",
             ],
 
             "data analysis": [
                 "data analysis",
                 "data analytics",
-                "data analyst"
             ],
 
             "data science": [
                 "data science",
-                "data scientist"
+                "data scientist",
+            ],
+
+            "pandas": [
+                "pandas",
+                "panda",
             ],
 
             "scikit-learn": [
                 "scikit-learn",
                 "scikit learn",
-                "sklearn"
+                "sklearn",
+                "scikit_learn",
             ],
-
-            "pandas": [
-                "pandas",
-                "panda"
-            ],
-
-            "tensorflow": [
-                "tensorflow"
-            ]
         }
 
         # ========================================================
-        # RELATED CONCEPTS
+        # 7. RELATED SKILLS
         # ========================================================
 
-        related = {
-            "machine learning": [
-                "deep learning",
-                "artificial intelligence"
-            ],
-
-            "artificial intelligence": [
+        related_skills = {
+            "python": {
                 "machine learning",
-                "deep learning"
-            ],
-
-            "data science": [
-                "data analysis",
-                "machine learning"
-            ],
-
-            "data analysis": [
                 "data science",
-                "pandas"
-            ],
+                "data analysis",
+                "artificial intelligence",
+            },
 
-            "sql": [
-                "mysql",
-                "postgresql"
-            ]
+            "machine learning": {
+                "artificial intelligence",
+                "deep learning",
+                "data science",
+            },
+
+            "deep learning": {
+                "machine learning",
+                "artificial intelligence",
+            },
+
+            "artificial intelligence": {
+                "machine learning",
+                "deep learning",
+                "data science",
+            },
+
+            "data analysis": {
+                "data science",
+            },
+
+            "data science": {
+                "data analysis",
+                "machine learning",
+                "artificial intelligence",
+            },
+
+            "pandas": {
+                "data analysis",
+                "data science",
+            },
+
+            "scikit-learn": {
+                "machine learning",
+                "data science",
+            },
+
+            "sql": {
+                "data analysis",
+                "data science",
+            },
         }
 
         # ========================================================
-        # MATCH EACH REQUIRED SKILL
+        # 8. CHECK REQUIRED SKILLS
         # ========================================================
 
-        for skill in required_skills:
+        matched_skills = []
+        possible_skills = []
+        unknown_skills = []
 
-            skill_text = self._normalize_text(
-                skill
-            )
+        for required_skill in required_skills:
 
-            if not skill_text:
+            if not required_skill:
                 continue
 
+            original_skill = str(
+                required_skill
+            ).strip()
+
+            if not original_skill:
+                continue
+
+            skill = self._normalize_text(
+                original_skill
+            )
+
             # ----------------------------------------------------
-            # Direct match
+            # Direct / alias match
             # ----------------------------------------------------
 
-            if skill_text in role_text:
+            role_terms = aliases.get(
+                skill,
+                [skill]
+            )
+
+            direct_match = False
+
+            for term in role_terms:
+
+                if (
+                    term in role_text_normalized
+                    or
+                    term in candidate_skill_text_normalized
+                    or
+                    term in project_text_normalized
+                ):
+
+                    direct_match = True
+                    break
+
+            if direct_match:
 
                 matched_skills.append(
-                    skill
+                    original_skill
                 )
 
                 continue
 
             # ----------------------------------------------------
-            # Alias match
+            # Related skill match
             # ----------------------------------------------------
 
-            matched_alias = False
+            related_match = False
 
-            for alias in aliases.get(
-                skill_text,
-                [skill_text]
-            ):
-
-                if alias in role_text:
-
-                    matched_skills.append(
-                        skill
-                    )
-
-                    matched_alias = True
-
-                    break
-
-            if matched_alias:
-                continue
-
-            # ----------------------------------------------------
-            # Related concept
-            # ----------------------------------------------------
-
-            is_related = False
-
-            for related_skill in related.get(
-                skill_text,
-                []
-            ):
-
-                if related_skill in role_text:
-
-                    possible_skills.append(
-                        skill
-                    )
-
-                    is_related = True
-
-                    break
-
-            if is_related:
-                continue
-
-            # ----------------------------------------------------
-            # Unknown
-            # ----------------------------------------------------
-
-            unknown_skills.append(
-                skill
+            related_for_skill = (
+                related_skills.get(
+                    skill,
+                    set()
+                )
             )
 
+            for related_skill in related_for_skill:
+
+                related_terms = aliases.get(
+                    related_skill,
+                    [related_skill]
+                )
+
+                for term in related_terms:
+
+                    if (
+                        term in role_text_normalized
+                        or
+                        term in candidate_skill_text_normalized
+                        or
+                        term in project_text_normalized
+                    ):
+
+                        related_match = True
+                        break
+
+                if related_match:
+                    break
+
+            if related_match:
+
+                possible_skills.append(
+                    original_skill
+                )
+
+            else:
+
+                unknown_skills.append(
+                    original_skill
+                )
+
         # ========================================================
-        # CALCULATE SKILL SCORE
+        # 9. CALCULATE SCORE
         # ========================================================
 
-        total = (
+        total_skills = (
             len(matched_skills)
             +
             len(possible_skills)
@@ -524,7 +781,7 @@ class RelevantExperienceAnalyzer:
             len(unknown_skills)
         )
 
-        if total == 0:
+        if total_skills == 0:
 
             score = 0.0
 
@@ -534,10 +791,27 @@ class RelevantExperienceAnalyzer:
                 len(matched_skills)
                 +
                 (
+                    0.50
+                    *
                     len(possible_skills)
-                    * 0.50
                 )
-            ) / total
+            ) / total_skills
+
+        # ========================================================
+        # 10. SAFETY CLAMP
+        # ========================================================
+
+        score = max(
+            0.0,
+            min(
+                1.0,
+                score
+            )
+        )
+
+        # ========================================================
+        # 11. RETURN FOUR VALUES
+        # ========================================================
 
         return (
             round(
@@ -548,185 +822,6 @@ class RelevantExperienceAnalyzer:
             possible_skills,
             unknown_skills
         )
-
-    # ============================================================
-    # ROLE DURATION FROM CENTRAL MATCHER
-    # ============================================================
-
-    def _get_role_duration_from_matcher(
-        self,
-        resume: dict,
-        role: dict,
-        required_years: float = 0
-    ) -> float | None:
-        """
-        Get the duration of a specific role from the central
-        experience matcher.
-
-        Date calculations are intentionally NOT performed here.
-        """
-
-        try:
-
-            from app.matcher.experience_matcher import (
-                match_experience
-            )
-
-            result = match_experience(
-                resume,
-                {
-                    "minimum_years": required_years
-                }
-            )
-
-            details = result.get(
-                "experience_details",
-                []
-            )
-
-            if not details:
-                return None
-
-            role_title = self._normalize_text(
-                role.get(
-                    "job_title",
-                    ""
-                )
-            )
-
-            role_company = self._normalize_text(
-                role.get(
-                    "company",
-                    ""
-                )
-            )
-
-            # ====================================================
-            # TITLE + COMPANY
-            # ====================================================
-
-            for detail in details:
-
-                detail_title = self._normalize_text(
-                    detail.get(
-                        "job_title",
-                        ""
-                    )
-                )
-
-                detail_company = self._normalize_text(
-                    detail.get(
-                        "company",
-                        ""
-                    )
-                )
-
-                title_match = (
-                    role_title
-                    and detail_title
-                    and (
-                        role_title == detail_title
-                        or role_title in detail_title
-                        or detail_title in role_title
-                    )
-                )
-
-                company_match = (
-                    role_company
-                    and detail_company
-                    and (
-                        role_company == detail_company
-                        or role_company in detail_company
-                        or detail_company in role_company
-                    )
-                )
-
-                if title_match and (
-                    not role_company
-                    or company_match
-                ):
-
-                    duration = detail.get(
-                        "duration_years"
-                    )
-
-                    if duration is not None:
-                        return float(
-                            duration
-                        )
-
-            # ====================================================
-            # TITLE ONLY
-            # ====================================================
-
-            for detail in details:
-
-                detail_title = self._normalize_text(
-                    detail.get(
-                        "job_title",
-                        ""
-                    )
-                )
-
-                if (
-                    role_title
-                    and detail_title
-                    and (
-                        role_title == detail_title
-                        or role_title in detail_title
-                        or detail_title in role_title
-                    )
-                ):
-
-                    duration = detail.get(
-                        "duration_years"
-                    )
-
-                    if duration is not None:
-                        return float(
-                            duration
-                        )
-
-            # ====================================================
-            # RAW TEXT FALLBACK
-            # ====================================================
-
-            role_raw_text = self._normalize_text(
-                role.get(
-                    "raw_text",
-                    ""
-                )
-            )
-
-            if role_raw_text:
-
-                for detail in details:
-
-                    detail_title = self._normalize_text(
-                        detail.get(
-                            "job_title",
-                            ""
-                        )
-                    )
-
-                    if (
-                        detail_title
-                        and detail_title in role_raw_text
-                    ):
-
-                        duration = detail.get(
-                            "duration_years"
-                        )
-
-                        if duration is not None:
-                            return float(
-                                duration
-                            )
-
-        except Exception:
-            return None
-
-        return None
 
     # ============================================================
     # DETERMINE RELEVANCE STATUS
@@ -754,38 +849,22 @@ class RelevantExperienceAnalyzer:
 
     def analyze_role(
         self,
-        resume: dict,
         role: dict,
-        target_title: str = "",
-        required_skills: list | None = None,
-        required_years: float = 0
+        target_title: str,
+        required_skills: list,
+        resume: dict | None = None
     ) -> dict:
         """
-        Analyze one professional experience role.
+        Analyze relevance of one professional experience role.
+
+        Employment duration is taken from the role's existing
+        duration fields when available.
+
+        Candidate-level skills and projects are used only for
+        relevance evidence.
         """
 
-        if not role:
-
-            return {
-                "job_title": None,
-                "company": None,
-                "location": None,
-                "duration_years": None,
-                "title_relevance": 0.0,
-                "skill_relevance": 0.0,
-                "relevance": 0.0,
-                "status": "low",
-                "matched_skills": [],
-                "possible_skills": [],
-                "unknown_skills": [],
-                "evidence_strength": "low"
-            }
-
-        required_skills = (
-            required_skills
-            if required_skills
-            else []
-        )
+        resume = resume or {}
 
         # ========================================================
         # TITLE RELEVANCE
@@ -809,92 +888,192 @@ class RelevantExperienceAnalyzer:
             unknown_skills
         ) = self._calculate_skill_relevance(
             role,
-            required_skills
+            required_skills,
+            resume
         )
 
         # ========================================================
-        # OVERALL RELEVANCE
+        # ROLE RELEVANCE
         # ========================================================
 
-        relevance = (
+        relevance_score = (
             (
-                title_relevance
-                *
                 self.TITLE_WEIGHT
+                *
+                title_relevance
             )
             +
             (
-                skill_relevance
-                *
                 self.SKILL_WEIGHT
+                *
+                skill_relevance
             )
         )
 
-        relevance = round(
-            relevance,
-            4
+        relevance_score = max(
+            0.0,
+            min(
+                1.0,
+                relevance_score
+            )
         )
-
-        # ========================================================
-        # STATUS
-        # ========================================================
 
         status = self._get_relevance_status(
-            relevance
+            relevance_score
         )
 
         # ========================================================
-        # ROLE DURATION
+        # GET ROLE DURATION
         # ========================================================
 
-        duration_years = (
-            self._get_role_duration_from_matcher(
-                resume,
-                role,
-                required_years
-            )
+        duration_months = role.get(
+            "duration_months"
         )
 
-        # ========================================================
-        # EVIDENCE STRENGTH
-        # ========================================================
+        duration_years = role.get(
+            "duration_years"
+        )
 
+        # If duration years is unavailable but months exist,
+        # derive years from months.
         if (
-            title_relevance >= 0.75
-            and skill_relevance >= 0.75
+            duration_years is None
+            and
+            duration_months is not None
         ):
 
-            evidence_strength = "high"
+            try:
 
-        elif (
-            title_relevance >= 0.50
-            or skill_relevance >= 0.50
+                duration_years = (
+                    float(duration_months)
+                    /
+                    12.0
+                )
+
+            except (
+                TypeError,
+                ValueError
+            ):
+
+                duration_years = 0.0
+
+        if duration_months is None:
+
+            if duration_years is not None:
+
+                try:
+
+                    duration_months = (
+                        float(duration_years)
+                        *
+                        12.0
+                    )
+
+                except (
+                    TypeError,
+                    ValueError
+                ):
+
+                    duration_months = 0.0
+
+            else:
+
+                duration_months = 0.0
+
+        try:
+
+            duration_months = float(
+                duration_months
+            )
+
+        except (
+            TypeError,
+            ValueError
         ):
 
-            evidence_strength = "moderate"
+            duration_months = 0.0
 
-        else:
+        try:
 
-            evidence_strength = "low"
+            duration_years = float(
+                duration_years
+                if duration_years is not None
+                else 0.0
+            )
+
+        except (
+            TypeError,
+            ValueError
+        ):
+
+            duration_years = 0.0
 
         # ========================================================
-        # RESULT
+        # WEIGHTED RELEVANT EXPERIENCE
+        # ========================================================
+
+        relevant_years = (
+            duration_years
+            *
+            relevance_score
+        )
+
+        # ========================================================
+        # RETURN ROLE RESULT
         # ========================================================
 
         return {
-            "job_title": role.get(
-                "job_title"
-            ),
-
             "company": role.get(
                 "company"
+            ),
+
+            "job_title": role.get(
+                "job_title"
             ),
 
             "location": role.get(
                 "location"
             ),
 
-            "duration_years": duration_years,
+            "start": (
+                role.get("dates", {})
+                .get("start")
+                if isinstance(
+                    role.get("dates"),
+                    dict
+                )
+                else None
+            ),
+
+            "end": (
+                role.get("dates", {})
+                .get("end")
+                if isinstance(
+                    role.get("dates"),
+                    dict
+                )
+                else None
+            ),
+
+            "current": (
+                role.get("dates", {})
+                .get("current", False)
+                if isinstance(
+                    role.get("dates"),
+                    dict
+                )
+                else False
+            ),
+
+            "duration_months": round(
+                duration_months,
+                2
+            ),
+
+            "duration_years": round(
+                duration_years,
+                2
+            ),
 
             "title_relevance": round(
                 title_relevance,
@@ -906,7 +1085,10 @@ class RelevantExperienceAnalyzer:
                 4
             ),
 
-            "relevance": relevance,
+            "relevance_score": round(
+                relevance_score,
+                4
+            ),
 
             "status": status,
 
@@ -916,333 +1098,190 @@ class RelevantExperienceAnalyzer:
 
             "unknown_skills": unknown_skills,
 
-            "evidence_strength": evidence_strength
+            "relevant_years": round(
+                relevant_years,
+                4
+            ),
         }
 
     # ============================================================
-    # CALCULATE RELEVANT YEARS
-    # ============================================================
-
-    def _calculate_relevant_years(
-        self,
-        roles: list
-    ) -> float:
-        """
-        Calculate weighted relevant experience.
-
-        Weighting:
-            high      -> 100%
-            moderate  -> 75%
-            low       -> 25%
-
-        Roles with unknown duration are ignored.
-        """
-
-        relevant_years = 0.0
-
-        for role in roles:
-
-            duration = role.get(
-                "duration_years"
-            )
-
-            if duration is None:
-                continue
-
-            try:
-
-                duration = float(
-                    duration
-                )
-
-            except (
-                TypeError,
-                ValueError
-            ):
-
-                continue
-
-            status = role.get(
-                "status",
-                "low"
-            )
-
-            if status == "high":
-
-                relevant_years += duration
-
-            elif status == "moderate":
-
-                relevant_years += (
-                    duration
-                    *
-                    0.75
-                )
-
-            elif status == "low":
-
-                relevant_years += (
-                    duration
-                    *
-                    0.25
-                )
-
-        return round(
-            relevant_years,
-            2
-        )
-
-    # ============================================================
-    # ANALYZE ALL EXPERIENCES
+    # ANALYZE ALL EXPERIENCE
     # ============================================================
 
     def analyze(
         self,
         resume: dict,
-        job_title: str = "",
-        required_skills: list | None = None,
-        required_years: float = 0,
-        target_title: str | None = None
+        job_title: str,
+        required_skills: list,
+        required_years: float
     ) -> dict:
         """
-        Analyze all candidate experience entries.
-
-        `job_title` is the preferred public argument.
-
-        `target_title` is retained for backward compatibility.
+        Analyze all candidate experience against a target job.
         """
 
-        # --------------------------------------------------------
-        # Backward compatibility
-        # --------------------------------------------------------
-
-        if not job_title and target_title:
-            job_title = target_title
-
-        required_skills = (
-            required_skills
-            if required_skills
-            else []
-        )
-
-        # ========================================================
-        # EMPTY RESUME
-        # ========================================================
-
-        if not resume:
-
-            return {
-                "job_title": job_title,
-                "required_years": required_years,
-                "candidate_years": 0.0,
-                "relevant_years": 0.0,
-                "experience_status": "missing",
-                "experience_requirement_ratio": None,
-                "relevant_experience_ratio": None,
-                "relevant_roles": [],
-                "roles": [],
-                "relevance_status": "low",
-                "relevance_score": 0.0
-            }
-
-        # ========================================================
-        # EXPERIENCES
-        # ========================================================
+        resume = resume or {}
 
         experiences = resume.get(
             "experience",
             []
         )
 
-        if not experiences:
+        if not isinstance(
+            experiences,
+            list
+        ):
 
-            return {
-                "job_title": job_title,
-                "required_years": required_years,
-                "candidate_years": 0.0,
-                "relevant_years": 0.0,
-                "experience_status": "missing",
-                "experience_requirement_ratio": None,
-                "relevant_experience_ratio": None,
-                "relevant_roles": [],
-                "roles": [],
-                "relevance_status": "low",
-                "relevance_score": 0.0
-            }
-
-        # ========================================================
-        # CANDIDATE TOTAL EXPERIENCE
-        # ========================================================
+            experiences = []
 
         try:
 
-            from app.matcher.experience_matcher import (
-                calculate_total_experience
+            required_years = float(
+                required_years
             )
 
-            candidate_years = (
-                calculate_total_experience(
-                    experiences
-                )
-            )
+        except (
+            TypeError,
+            ValueError
+        ):
 
-        except Exception:
+            required_years = 0.0
 
-            candidate_years = 0.0
+        role_results = []
 
-        # ========================================================
-        # EXPERIENCE STATUS
-        # ========================================================
-
-        if required_years and required_years > 0:
-
-            if candidate_years >= required_years:
-
-                experience_status = "matched"
-
-            elif candidate_years > 0:
-
-                experience_status = "partial"
-
-            else:
-
-                experience_status = "missing"
-
-        else:
-
-            experience_status = "matched"
-
-        # ========================================================
-        # EXPERIENCE RATIO
-        # ========================================================
-
-        if required_years and required_years > 0:
-
-            experience_requirement_ratio = round(
-                candidate_years
-                /
-                required_years,
-                4
-            )
-
-        else:
-
-            experience_requirement_ratio = None
-
-        # ========================================================
-        # ANALYZE EACH ROLE
-        # ========================================================
-
-        analyzed_roles = []
-
-        for experience in experiences:
+        for role in experiences:
 
             if not isinstance(
-                experience,
+                role,
                 dict
             ):
                 continue
 
             role_result = self.analyze_role(
-                resume=resume,
-                role=experience,
+                role=role,
                 target_title=job_title,
                 required_skills=required_skills,
-                required_years=required_years
+                resume=resume
             )
 
-            analyzed_roles.append(
+            role_results.append(
                 role_result
             )
 
         # ========================================================
-        # RELEVANT EXPERIENCE
+        # TOTAL DOCUMENTED EXPERIENCE
         # ========================================================
 
-        relevant_years = (
-            self._calculate_relevant_years(
-                analyzed_roles
-            )
-        )
+        total_experience_years = 0.0
 
-        # ========================================================
-        # RELEVANT EXPERIENCE RATIO
-        # ========================================================
+        for role_result in role_results:
 
-        if required_years and required_years > 0:
-
-            relevant_experience_ratio = round(
-                relevant_years
-                /
-                required_years,
-                4
-            )
-
-        else:
-
-            relevant_experience_ratio = None
-
-        # ========================================================
-        # OVERALL RELEVANCE SCORE
-        # ========================================================
-
-        if analyzed_roles:
-
-            relevance_score = round(
-                sum(
-                    role.get(
-                        "relevance",
-                        0.0
-                    )
-                    for role in analyzed_roles
+            total_experience_years += (
+                role_result.get(
+                    "duration_years",
+                    0.0
                 )
-                /
-                len(analyzed_roles),
-                4
             )
 
-        else:
-
-            relevance_score = 0.0
-
         # ========================================================
-        # OVERALL RELEVANCE STATUS
+        # TOTAL RELEVANT EXPERIENCE
         # ========================================================
 
-        relevance_status = (
-            self._get_relevance_status(
-                relevance_score
+        relevant_experience_years = 0.0
+
+        for role_result in role_results:
+
+            relevant_experience_years += (
+                role_result.get(
+                    "relevant_years",
+                    0.0
+                )
             )
+
+        # ========================================================
+        # LIMIT RELEVANT EXPERIENCE
+        # ========================================================
+
+        # Relevant experience cannot exceed the candidate's
+        # documented total employment experience.
+        relevant_experience_years = min(
+            relevant_experience_years,
+            total_experience_years
         )
 
         # ========================================================
-        # FINAL RESULT
+        # REQUIRED EXPERIENCE SCORE
+        # ========================================================
+
+        if required_years <= 0:
+
+            experience_score = 1.0
+
+        else:
+
+            experience_score = (
+                relevant_experience_years
+                /
+                required_years
+            )
+
+            experience_score = max(
+                0.0,
+                min(
+                    1.0,
+                    experience_score
+                )
+            )
+
+        # ========================================================
+        # OVERALL STATUS
+        # ========================================================
+
+        if experience_score >= self.HIGH_THRESHOLD:
+
+            overall_status = "high"
+
+        elif experience_score >= self.MODERATE_THRESHOLD:
+
+            overall_status = "moderate"
+
+        elif relevant_experience_years > 0:
+
+            overall_status = "partial"
+
+        else:
+
+            overall_status = "low"
+
+        # ========================================================
+        # RETURN FINAL RESULT
         # ========================================================
 
         return {
             "job_title": job_title,
 
-            "required_years": required_years,
+            "required_years": round(
+                required_years,
+                2
+            ),
 
-            "candidate_years": candidate_years,
+            "candidate_years": round(
+                total_experience_years,
+                2
+            ),
 
-            "relevant_years": relevant_years,
+            "relevant_years": round(
+                relevant_experience_years,
+                2
+            ),
 
-            "experience_status": experience_status,
+            "experience_score": round(
+                experience_score,
+                4
+            ),
 
-            "experience_requirement_ratio":
-                experience_requirement_ratio,
+            "status": overall_status,
 
-            "relevant_experience_ratio":
-                relevant_experience_ratio,
+            "roles": role_results,
 
-            "relevant_roles": analyzed_roles,
-
-            # Keep this alias because other parts
-            # of the project may already use it.
-            "roles": analyzed_roles,
-
-            "relevance_status": relevance_status,
-
-            "relevance_score": relevance_score
+            "experience_details": role_results,
         }

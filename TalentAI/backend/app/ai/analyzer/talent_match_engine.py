@@ -7,6 +7,22 @@ from app.ai.analyzer.decision_engine import DecisionEngine
 from app.ai.analyzer.skill_experience_matcher import (
     SkillExperienceMatcher,
 )
+from app.ai.analyzer.project_relevance import (
+    ProjectRelevanceAnalyzer,
+)
+from app.ai.analyzer.ats_scoring_engine import (
+    calculate_ats_score,
+    generate_score_summary,
+)
+from app.ai.analyzer.requirement_reasoner import (
+    RequirementReasoner,
+)
+from app.ai.analyzer.candidate_job_reasoner import (
+    CandidateJobReasoner,
+)
+from app.ai.analyzer.relevant_experience import (
+    RelevantExperienceAnalyzer,
+)
 
 # ATS scoring engine
 from app.ai.analyzer.ats_scoring_engine import (
@@ -70,9 +86,21 @@ class TalentMatchEngine:
             SkillExperienceMatcher()
         )
 
-        print(
-            "TalentAI Match Engine initialized successfully."
+        self.project_relevance_analyzer = (
+            ProjectRelevanceAnalyzer()
         )
+
+        self.requirement_reasoner = (
+            RequirementReasoner()
+        )
+
+        self.candidate_job_reasoner = (
+            CandidateJobReasoner()
+)
+        self.relevant_experience_analyzer = (
+            RelevantExperienceAnalyzer()
+        )
+
 
     # ========================================================
     # RESUME SKILLS
@@ -583,17 +611,53 @@ class TalentMatchEngine:
 
                     result["context_match"] = True
 
-            # ------------------------------------------------
-            # STEP 5: FINAL CLASSIFICATION
+                # ------------------------------------------------
+            # STEP 5: EVIDENCE ANALYSIS
             # ------------------------------------------------
 
-            if status == "matched":
+            evidence_result = self.analyze_evidence(
+                requirement,
+                resume
+            )
+
+            result["evidence"] = evidence_result
+
+            # ------------------------------------------------
+            # STEP 6: REQUIREMENT REASONING
+            # ------------------------------------------------
+
+            reasoning_result = self.reason_requirement(
+                requirement=requirement,
+                hybrid_result=result,
+                context_result=context_result or {},
+                evidence_result=evidence_result
+            )
+
+            result["reasoning"] = reasoning_result
+
+            # ------------------------------------------------
+            # STEP 7: FINAL CLASSIFICATION
+            # ------------------------------------------------
+
+            final_status = reasoning_result.get(
+                "status",
+                "unknown"
+            )
+
+            result["status"] = final_status
+
+            result["confidence"] = reasoning_result.get(
+                "confidence",
+                result.get("confidence", 0.0)
+            )
+
+            if final_status == "matched":
 
                 matched.append(
                     result
                 )
 
-            elif status == "possible":
+            elif final_status == "possible":
 
                 possible.append(
                     result
@@ -605,11 +669,16 @@ class TalentMatchEngine:
                     result
                 )
 
+
         return {
             "matched": matched,
             "possible": possible,
             "unknown": unknown
         }
+
+    # ========================================================
+    # EXPERIENCE MATCH
+    # ========================================================
 
     # ========================================================
     # EXPERIENCE MATCH
@@ -684,6 +753,82 @@ class TalentMatchEngine:
                 "candidate_years": None
             }
 
+    # ========================================================
+    # RELEVANT EXPERIENCE
+    # ========================================================
+
+    def analyze_relevant_experience(
+        self,
+        resume: Dict,
+        job: Dict
+    ) -> Dict:
+        """
+        Analyze how much of the candidate's experience is
+        relevant to the target job.
+
+        RelevantExperienceAnalyzer handles:
+            - job-title relevance
+            - skill relevance
+            - role duration
+            - relevant years
+            - relevant experience ratio
+        """
+
+        try:
+
+            experience_requirement = (
+                job.get("experience", {}) or {}
+            )
+
+            required_years = (
+                experience_requirement.get(
+                    "minimum_years",
+                    0
+                ) or 0
+            )
+
+            job_title = (
+                job.get("title")
+                or job.get("job_title")
+                or ""
+            )
+
+            required_skills = (
+                job.get("required_skills", [])
+                or job.get("skills", [])
+                or []
+            )
+
+            return self.relevant_experience_analyzer.analyze(
+                resume=resume,
+                job_title=job_title,
+                required_skills=required_skills,
+                required_years=float(required_years)
+            )
+
+        except Exception as error:
+
+            return {
+                "job_title": (
+                    job.get("title")
+                    or job.get("job_title")
+                    or ""
+                ),
+                "required_years": 0.0,
+                "candidate_years": 0.0,
+                "relevant_years": 0.0,
+                "experience_status": "unknown",
+                "experience_requirement_ratio": 0.0,
+                "relevant_experience_ratio": 0.0,
+                "relevant_roles": [],
+                "roles": [],
+                "relevance_status": "unknown",
+                "relevance_score": 0.0,
+                "error": str(error)
+            }
+
+    # ========================================================
+    # SKILL-SPECIFIC EXPERIENCE
     # ========================================================
     # SKILL-SPECIFIC EXPERIENCE
     # ========================================================
@@ -856,10 +1001,12 @@ class TalentMatchEngine:
         resume: Dict,
         job: Dict
     ) -> Dict:
+        """
+        Analyze whether the candidate's projects demonstrate
+        the skills required by the target job.
+        """
 
-        projects = self._get_projects(
-            resume
-        )
+        projects = self._get_projects(resume)
 
         required_skills = job.get(
             "required_skills",
@@ -871,20 +1018,15 @@ class TalentMatchEngine:
         unknown_skills = []
 
         # ====================================================
-        # BUILD PROJECT SKILL LIST
+        # BUILD PROJECT SKILL LIST AND PROJECT TEXT
         # ====================================================
 
         project_skills = []
-
         project_texts = []
 
         for project in projects:
 
-            if not isinstance(
-                project,
-                dict
-            ):
-
+            if not isinstance(project, dict):
                 continue
 
             project_name = project.get(
@@ -897,52 +1039,47 @@ class TalentMatchEngine:
                 ""
             )
 
+            raw_text = project.get(
+                "raw_text",
+                ""
+            )
+
             technologies = project.get(
                 "technologies",
                 []
             )
 
-            # -----------------------------------------------
+            # ------------------------------------------------
             # Project technologies
-            # -----------------------------------------------
+            # ------------------------------------------------
 
-            if isinstance(
-                technologies,
-                list
-            ):
+            if isinstance(technologies, list):
 
                 for technology in technologies:
 
                     if technology:
-
                         project_skills.append(
                             str(technology).strip()
                         )
 
-            elif isinstance(
-                technologies,
-                str
-            ):
+            elif isinstance(technologies, str):
 
                 if technologies.strip():
-
                     project_skills.append(
                         technologies.strip()
                     )
 
-            # -----------------------------------------------
+            # ------------------------------------------------
             # Project text
-            # -----------------------------------------------
+            # ------------------------------------------------
 
             text_parts = [
                 str(project_name),
-                str(description)
+                str(description),
+                str(raw_text)
             ]
 
-            if isinstance(
-                technologies,
-                list
-            ):
+            if isinstance(technologies, list):
 
                 text_parts.extend(
                     str(x)
@@ -950,17 +1087,16 @@ class TalentMatchEngine:
                     if x
                 )
 
-            elif isinstance(
-                technologies,
-                str
-            ):
+            elif isinstance(technologies, str):
 
-                text_parts.append(
-                    technologies
-                )
+                text_parts.append(technologies)
 
             project_texts.append(
-                " ".join(text_parts)
+                " ".join(
+                    part
+                    for part in text_parts
+                    if part and part != "None"
+                )
             )
 
         # ====================================================
@@ -968,10 +1104,12 @@ class TalentMatchEngine:
         # ====================================================
 
         unique_project_skills = []
-
         seen = set()
 
         for skill in project_skills:
+
+            if not skill:
+                continue
 
             normalized = (
                 skill
@@ -983,10 +1121,7 @@ class TalentMatchEngine:
             if normalized not in seen:
 
                 seen.add(normalized)
-
-                unique_project_skills.append(
-                    skill
-                )
+                unique_project_skills.append(skill)
 
         # ====================================================
         # MATCH REQUIREMENTS AGAINST PROJECT SKILLS
@@ -1005,24 +1140,14 @@ class TalentMatchEngine:
                 unique_project_skills
             )
 
-            if result.get(
-                "status"
-            ) == "matched":
+            if result.get("status") == "matched":
 
-                matched_skills.append(
-                    requirement
-                )
-
+                matched_skills.append(requirement)
                 found = True
 
-            elif result.get(
-                "status"
-            ) == "possible":
+            elif result.get("status") == "possible":
 
-                possible_skills.append(
-                    requirement
-                )
-
+                possible_skills.append(requirement)
                 found = True
 
             # ------------------------------------------------
@@ -1033,35 +1158,24 @@ class TalentMatchEngine:
 
                 for project_text in project_texts:
 
-                    result = (
-                        self.hybrid_matcher.match_requirement(
-                            requirement,
-                            [project_text]
-                        )
+                    if not project_text:
+                        continue
+
+                    result = self.hybrid_matcher.match_requirement(
+                        requirement,
+                        [project_text]
                     )
 
-                    if result.get(
-                        "status"
-                    ) == "matched":
+                    if result.get("status") == "matched":
 
-                        matched_skills.append(
-                            requirement
-                        )
-
+                        matched_skills.append(requirement)
                         found = True
-
                         break
 
-                    elif result.get(
-                        "status"
-                    ) == "possible":
+                    elif result.get("status") == "possible":
 
-                        possible_skills.append(
-                            requirement
-                        )
-
+                        possible_skills.append(requirement)
                         found = True
-
                         break
 
             # ------------------------------------------------
@@ -1069,10 +1183,7 @@ class TalentMatchEngine:
             # ------------------------------------------------
 
             if not found:
-
-                unknown_skills.append(
-                    requirement
-                )
+                unknown_skills.append(requirement)
 
         return {
             "matched_skills": matched_skills,
@@ -1081,6 +1192,95 @@ class TalentMatchEngine:
         }
 
     # ========================================================
+    # PROJECT RELEVANCE
+    # ========================================================
+
+    def analyze_project_relevance(
+        self,
+        resume: Dict,
+        required_skills: List[str],
+        preferred_skills: List[str]
+    ) -> Dict:
+        """
+        Analyze how relevant candidate projects are
+        to the target job.
+        """
+
+        try:
+
+            projects = resume.get(
+                "projects",
+                []
+            )
+
+            result = self.project_relevance_analyzer.analyze(
+                projects=projects,
+                required_skills=required_skills,
+                preferred_skills=preferred_skills
+            )
+
+            # Normalize project relevance so downstream layers
+            # receive a top-level status. The analyzer currently
+            # stores status inside each relevant project.
+            if not isinstance(result, dict):
+                return {
+                    "overall_project_relevance": 0.0,
+                    "project_count": 0,
+                    "relevant_projects": [],
+                    "status": "unknown",
+                }
+
+            if "status" not in result:
+                relevant_projects = result.get(
+                    "relevant_projects", []
+                )
+
+                if isinstance(relevant_projects, list):
+                    valid_projects = [
+                        project
+                        for project in relevant_projects
+                        if isinstance(project, dict)
+                    ]
+
+                    if valid_projects:
+                        def _project_relevance_score(project):
+                            try:
+                                return float(
+                                    project.get(
+                                        "relevance_score",
+                                        0.0
+                                    ) or 0.0
+                                )
+                            except (TypeError, ValueError):
+                                return 0.0
+
+                        best_project = max(
+                            valid_projects,
+                            key=_project_relevance_score
+                        )
+
+                        result["status"] = best_project.get(
+                            "status",
+                            "unknown"
+                        )
+                    else:
+                        result["status"] = "unknown"
+                else:
+                    result["status"] = "unknown"
+
+            return result
+
+        except Exception as error:
+
+            return {
+                "overall_project_relevance": 0.0,
+                "project_count": 0,
+                "relevant_projects": [],
+                "status": "unknown",
+                "error": str(error)
+            }
+
+       # ========================================================
     # EVIDENCE
     # ========================================================
 
@@ -1092,7 +1292,7 @@ class TalentMatchEngine:
 
         try:
 
-            return self.evidence_engine.find_evidence(
+            return self.evidence_engine.collect_evidence(
                 requirement,
                 resume
             )
@@ -1101,33 +1301,70 @@ class TalentMatchEngine:
 
             try:
 
-                return self.evidence_engine.find(
+                return self.evidence_engine.find_evidence(
                     requirement,
                     resume
                 )
 
-            except Exception:
+            except AttributeError:
+
+                try:
+
+                    return self.evidence_engine.find(
+                        requirement,
+                        resume
+                    )
+
+                except Exception as error:
+
+                    return {
+                        "requirement": requirement,
+                        "evidence": [],
+                        "evidence_count": 0,
+                        "best_source": None,
+                        "best_weight": 0.0,
+                        "evidence_strength": 0.0,
+                        "source_coverage": 0.0,
+                        "direct_evidence": False,
+                        "indirect_evidence": False,
+                        "evidence_quality": "none",
+                        "status": "not_found",
+                        "error": str(error)
+                    }
+
+            except Exception as error:
 
                 return {
                     "requirement": requirement,
                     "evidence": [],
                     "evidence_count": 0,
                     "best_source": None,
+                    "best_weight": 0.0,
                     "evidence_strength": 0.0,
-                    "status": "not_found"
+                    "source_coverage": 0.0,
+                    "direct_evidence": False,
+                    "indirect_evidence": False,
+                    "evidence_quality": "none",
+                    "status": "not_found",
+                    "error": str(error)
                 }
 
-        except Exception:
+        except Exception as error:
 
             return {
                 "requirement": requirement,
                 "evidence": [],
                 "evidence_count": 0,
                 "best_source": None,
+                "best_weight": 0.0,
                 "evidence_strength": 0.0,
-                "status": "not_found"
+                "source_coverage": 0.0,
+                "direct_evidence": False,
+                "indirect_evidence": False,
+                "evidence_quality": "none",
+                "status": "not_found",
+                "error": str(error)
             }
-
     # ========================================================
     # BUILD MATCH RESULT
     # ========================================================
@@ -1205,6 +1442,36 @@ class TalentMatchEngine:
         )
 
         # ----------------------------------------------------
+        # Relevant experience
+        # ----------------------------------------------------
+
+        # Use the central experience matcher as the single
+        # source of employment duration. RelevantExperienceAnalyzer
+        # evaluates relevance; it does not recalculate dates.
+        relevant_resume = dict(resume)
+
+        experience_details = experience_result.get(
+            "experience_details",
+            []
+        )
+
+        if not isinstance(experience_details, list):
+            experience_details = []
+
+        relevant_resume["experience"] = [
+            dict(role)
+            for role in experience_details
+            if isinstance(role, dict)
+        ]
+
+        relevant_experience_result = (
+            self.analyze_relevant_experience(
+                relevant_resume,
+                job
+            )
+        )
+
+        # ----------------------------------------------------
         # Education
         # ----------------------------------------------------
 
@@ -1223,6 +1490,18 @@ class TalentMatchEngine:
             self.analyze_projects(
                 resume,
                 job
+            )
+        )
+
+        # ----------------------------------------------------
+        # Project relevance
+        # ----------------------------------------------------
+
+        project_relevance_result = (
+            self.analyze_project_relevance(
+                resume=resume,
+                required_skills=required_skills,
+                preferred_skills=preferred_skills
             )
         )
 
@@ -1246,11 +1525,91 @@ class TalentMatchEngine:
 
             "experience": experience_result,
 
+            "relevant_experience": relevant_experience_result,
+            
             "education": education_result,
 
-            "projects": project_result
+            "projects": project_result,
+
+            "project_relevance": project_relevance_result
         }
 
+        # ========================================================
+    # REQUIREMENT REASONING
+    # ========================================================
+
+    def reason_requirement(
+        self,
+        requirement: str,
+        hybrid_result: Dict,
+        context_result: Dict,
+        evidence_result: Dict
+    ) -> Dict:
+        """
+        Combine HybridMatcher, ContextMatcher, and
+        EvidenceEngine results into one requirement-level
+        reasoning result.
+        """
+
+        try:
+
+            return self.requirement_reasoner.reason(
+                requirement=requirement,
+                hybrid_result=hybrid_result,
+                context_result=context_result,
+                evidence_result=evidence_result
+            )
+
+        except Exception as error:
+
+            return {
+                "requirement": requirement,
+                "status": "unknown",
+                "confidence": 0.0,
+                "direct_match": False,
+                "relationship_match": False,
+                "context_supported": False,
+                "evidence_found": False,
+                "direct_evidence": False,
+                "match_score": 0.0,
+                "context_score": 0.0,
+                "evidence_score": 0.0,
+                "evidence_quality": "none",
+                "best_source": None,
+                "source_coverage": 0.0,
+                "reason": (
+                    "Requirement reasoning failed: "
+                    f"{str(error)}"
+                )
+            }
+
+        
+    def reason_candidate_job(
+        self,
+        job_title: str,
+        match_result: Dict,
+        context: Dict,
+        evidence: Dict
+    ) -> Dict:
+        
+        try:
+
+            return self.candidate_job_reasoner.reason(
+                job_title=job_title,
+                match_result=match_result,
+                context=context,
+                evidence=evidence
+            )
+        except Exception as error:
+            return {
+               "job_title": job_title,
+               "status": "unknown",
+               "overall_score": 0.0,
+               "reason": (
+                   "Candidate-job reasoning failed: "
+                   f"{str(error)}"
+                ),
+            }
     # ========================================================
     # BUILD CONTEXT RESULT
     # ========================================================
@@ -1504,44 +1863,69 @@ class TalentMatchEngine:
             match_result
         )
 
-        # ----------------------------------------------------
-        # STEP 7: Final response
-        # ----------------------------------------------------
+        print("\n" + "=" * 60)
+        print("DEBUG: MATCH RESULT BEFORE CANDIDATE JOB REASONER")
+        print("=" * 60)
+
+        print("PROJECT RELEVANCE:")
+        print(match_result.get("project_relevance"))
+
+        print("\nEXPERIENCE:")
+        print(match_result.get("experience"))
+
+        print("\nRELEVANT EXPERIENCE:")
+        print(match_result.get("relevant_experience"))
+
+        print("\nEDUCATION:")
+        print(match_result.get("education"))
+
+        print("\nSKILLS:")
+        print(match_result.get("skills"))
+
+        print("=" * 60)
+        
+        candidate_job_reasoning = self.reason_candidate_job(
+            job_title=job.get("job_title", ""),
+            match_result=match_result,
+            context=context,
+            evidence=evidence,
+        )
+
+        print(
+            "PROJECT STATUS:",
+            match_result
+            .get("project_relevance", {})
+            .get("status")
+        )
+
+        
+        print(
+            "PROJECT RELEVANCE OBJECT ID:",
+            id(match_result.get("project_relevance"))
+        )
+        
 
         return {
-
-            "job_title": job.get(
-                "job_title"
-            ),
-
-            "ats_score": ats_result.get(
-                "score",
-                0.0
-            ),
-
+            "job_title": job.get("job_title"),
+            "ats_score": ats_result.get("score", 0.0),
             "classification": ats_result.get(
                 "classification",
                 "poor"
             ),
-
-            "score_breakdown": ats_result.get(
+             "score_breakdown": ats_result.get(
                 "breakdown",
                 {}
             ),
-
             "ats": ats_result,
-
             "score_summary": ats_summary,
-
             "match": match_result,
-
             "context": context,
-
             "evidence": evidence,
-
-            "decision": decision
+            "decision": decision,
+            "candidate_job_reasoning": candidate_job_reasoning,
         }
 
+       
 
 # ============================================================
 # CONVENIENCE FUNCTION

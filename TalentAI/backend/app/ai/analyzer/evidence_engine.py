@@ -653,7 +653,6 @@ def find_summary_evidence(
 
     return []
 
-
 # ============================================================
 # COLLECT ALL EVIDENCE
 # ============================================================
@@ -670,7 +669,12 @@ def collect_evidence(
             "evidence": [],
             "evidence_count": 0,
             "best_source": None,
+            "best_weight": 0.0,
             "evidence_strength": 0.0,
+            "source_coverage": 0.0,
+            "direct_evidence": False,
+            "indirect_evidence": False,
+            "evidence_quality": "none",
             "status": "not_found"
         }
 
@@ -684,7 +688,12 @@ def collect_evidence(
             "evidence": [],
             "evidence_count": 0,
             "best_source": None,
+            "best_weight": 0.0,
             "evidence_strength": 0.0,
+            "source_coverage": 0.0,
+            "direct_evidence": False,
+            "indirect_evidence": False,
+            "evidence_quality": "none",
             "status": "not_found"
         }
 
@@ -775,7 +784,52 @@ def collect_evidence(
     )
 
     # --------------------------------------------------------
-    # Sort strongest evidence first
+    # No evidence
+    # --------------------------------------------------------
+
+    if not evidence:
+
+        return {
+            "requirement": requirement,
+            "evidence": [],
+            "evidence_count": 0,
+            "best_source": None,
+            "best_weight": 0.0,
+            "evidence_strength": 0.0,
+            "source_coverage": 0.0,
+            "direct_evidence": False,
+            "indirect_evidence": False,
+            "evidence_quality": "none",
+            "status": "not_found"
+        }
+
+    # --------------------------------------------------------
+    # Remove duplicate sources
+    #
+    # Example:
+    #
+    # Project mentions Python 5 times
+    #
+    # We still treat it as ONE project source.
+    # --------------------------------------------------------
+
+    unique_sources = {}
+
+    for item in evidence:
+
+        source = item.get(
+            "source"
+        )
+
+        if not source:
+            continue
+
+        if source not in unique_sources:
+
+            unique_sources[source] = item
+
+    # --------------------------------------------------------
+    # Sort evidence by source strength
     # --------------------------------------------------------
 
     evidence.sort(
@@ -787,81 +841,216 @@ def collect_evidence(
     )
 
     # --------------------------------------------------------
-    # No evidence
-    # --------------------------------------------------------
-
-    if not evidence:
-
-        return {
-            "requirement": requirement,
-            "evidence": [],
-            "evidence_count": 0,
-            "best_source": None,
-            "evidence_strength": 0.0,
-            "status": "not_found"
-        }
-
-    # --------------------------------------------------------
     # Best evidence
     # --------------------------------------------------------
 
-    best_weight = evidence[0].get(
+    best_evidence = evidence[0]
+
+    best_weight = best_evidence.get(
         "weight",
         0.0
     )
 
-    best_source = evidence[0].get(
+    best_source = best_evidence.get(
         "source"
+    )
+
+    # --------------------------------------------------------
+    # Source coverage
+    #
+    # How many different resume sections support
+    # this requirement?
+    #
+    # Example:
+    #
+    # experience
+    # project
+    # skills
+    #
+    # = 3 / 6 = 0.50
+    # --------------------------------------------------------
+
+    total_possible_sources = len(
+        EVIDENCE_WEIGHTS
+    )
+
+    source_coverage = (
+        len(unique_sources)
+        / total_possible_sources
     )
 
     # --------------------------------------------------------
     # Evidence strength
     #
-    # Multiple independent sources increase confidence,
-    # but the value is capped at 1.0.
+    # Start from strongest evidence.
+    #
+    # Additional independent sources increase confidence,
+    # but their contribution decreases progressively.
+    #
+    # This prevents evidence from becoming artificially strong
+    # just because the same skill appears repeatedly.
     # --------------------------------------------------------
 
-    source_weights = []
+    sorted_unique_weights = sorted(
+        [
+            item.get(
+                "weight",
+                0.0
+            )
+            for item in unique_sources.values()
+        ],
+        reverse=True
+    )
 
-    seen_sources = set()
+    evidence_strength = 0.0
 
-    for item in evidence:
+    contribution_factors = [
+        1.00,
+        0.35,
+        0.20,
+        0.10,
+        0.05,
+        0.02
+    ]
 
-        source = item.get(
-            "source"
+    for index, weight in enumerate(
+        sorted_unique_weights
+    ):
+
+        if index >= len(
+            contribution_factors
+        ):
+            break
+
+        evidence_strength += (
+            weight
+            * contribution_factors[index]
         )
 
-        if source not in seen_sources:
-
-            source_weights.append(
-                item.get(
-                    "weight",
-                    0.0
-                )
-            )
-
-            seen_sources.add(
-                source
-            )
-
     evidence_strength = min(
-        sum(source_weights) / 2.0,
+        evidence_strength,
         1.0
     )
 
+    # --------------------------------------------------------
+    # Direct evidence
+    #
+    # Experience, project, skills and certification are
+    # treated as direct evidence because they can explicitly
+    # demonstrate the candidate's technical exposure.
+    # --------------------------------------------------------
+
+    direct_sources = {
+        "experience",
+        "project",
+        "skills",
+        "certification"
+    }
+
+    direct_evidence = any(
+        source in unique_sources
+        for source in direct_sources
+    )
+
+    # --------------------------------------------------------
+    # Indirect evidence
+    #
+    # Education and summary provide contextual evidence,
+    # but by themselves don't necessarily demonstrate
+    # practical skill usage.
+    # --------------------------------------------------------
+
+    indirect_sources = {
+        "education",
+        "summary"
+    }
+
+    indirect_evidence = any(
+        source in unique_sources
+        for source in indirect_sources
+    )
+
+    # --------------------------------------------------------
+    # Evidence quality
+    # --------------------------------------------------------
+
+    if (
+        best_weight >= 1.0
+        and len(unique_sources) >= 2
+    ):
+
+        evidence_quality = "strong"
+
+    elif (
+        best_weight >= 0.90
+        and direct_evidence
+    ):
+
+        evidence_quality = "strong"
+
+    elif (
+        direct_evidence
+        and evidence_strength >= 0.45
+    ):
+
+        evidence_quality = "moderate"
+
+    elif indirect_evidence:
+
+        evidence_quality = "weak"
+
+    else:
+
+        evidence_quality = "weak"
+
+    # --------------------------------------------------------
+    # Overall status
+    # --------------------------------------------------------
+
+    if evidence_quality == "strong":
+
+        status = "strong"
+
+    elif evidence_quality == "moderate":
+
+        status = "moderate"
+
+    else:
+
+        status = "found"
+
     return {
         "requirement": requirement,
+
         "evidence": evidence,
+
         "evidence_count": len(evidence),
+
         "best_source": best_source,
-        "best_weight": best_weight,
+
+        "best_weight": round(
+            best_weight,
+            4
+        ),
+
         "evidence_strength": round(
             evidence_strength,
             4
         ),
-        "status": "found"
-    }
 
+        "source_coverage": round(
+            source_coverage,
+            4
+        ),
+
+        "direct_evidence": direct_evidence,
+
+        "indirect_evidence": indirect_evidence,
+
+        "evidence_quality": evidence_quality,
+
+        "status": status
+    }
 
 # ============================================================
 # BATCH EVIDENCE
