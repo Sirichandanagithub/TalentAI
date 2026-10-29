@@ -1,0 +1,84 @@
+from pathlib import Path
+
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    UploadFile,
+    HTTPException,
+    status,
+)
+from sqlalchemy.orm import Session
+
+from app.auth.dependencies import get_current_user
+from app.auth.models import User
+from app.database.session import get_db
+from app.resume.models import Resume
+from app.resume.schema import ResumeResponse
+from app.resume.services import save_resume
+
+router = APIRouter(
+    prefix="/resume",
+    tags=["Resume"],
+)
+
+
+@router.post(
+    "/upload",
+    response_model=ResumeResponse,
+)
+async def upload_resume(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Upload a resume for the authenticated user.
+    """
+
+    result = await save_resume(
+        db=db,
+        file=file,
+        current_user=current_user,
+    )
+
+    return result
+
+
+@router.get(
+    "/{resume_id}",
+    response_model=ResumeResponse,
+)
+def get_resume(
+    resume_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Retrieve a resume only if it belongs to the authenticated user.
+    """
+
+    resume = (
+        db.query(Resume)
+        .filter(
+            Resume.id == resume_id,
+            Resume.user_id == current_user.id,
+        )
+        .first()
+    )
+
+    if resume is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Resume not found",
+        )
+
+    return {
+        "id": resume.id,
+        "user_id": resume.user_id,
+        "original_filename": resume.file_name,
+        "stored_filename": Path(resume.file_path).name,
+        "file_path": resume.file_path,
+        "uploaded_at": resume.uploaded_at,
+
+    }   

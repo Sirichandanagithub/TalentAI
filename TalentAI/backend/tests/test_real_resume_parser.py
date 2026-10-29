@@ -16,7 +16,7 @@ from app.parser.job_description_parser import (
 )
 
 from app.matcher.resume_matcher import (
-    match_resume
+    match_resume_to_job
 )
 
 from app.matcher.experience_matcher import (
@@ -352,7 +352,7 @@ print("=" * 60)
 
 try:
 
-    existing_match = match_resume(
+    existing_match = match_resume_to_job(
         resume,
         job
     )

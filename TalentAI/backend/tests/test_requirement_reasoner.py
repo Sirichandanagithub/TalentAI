@@ -49,8 +49,10 @@ def test_reasoner():
 
     assert result["status"] == "matched"
     assert result["direct_match"] is True
+    assert result["relationship_match"] is False
     assert result["direct_evidence"] is True
     assert result["context_supported"] is True
+    assert result["evidence_found"] is True
 
     print("✅ Python reasoning passed")
 
@@ -142,16 +144,22 @@ def test_reasoner():
     assert result["status"] == "unknown"
     assert result["evidence_found"] is False
     assert result["direct_match"] is False
+    assert result["relationship_match"] is False
+    assert result["context_supported"] is False
 
     print("✅ AWS unknown reasoning passed")
 
     # ========================================================
     # TEST 4
     # Evidence exists but matcher is uncertain
+    #
+    # Important:
+    # The relationship is indirect, so even strong evidence
+    # does not automatically turn it into a direct match.
     # ========================================================
 
     print("\n" + "=" * 60)
-    print("TEST 4: EVIDENCE OVERRIDES UNCERTAINTY")
+    print("TEST 4: EVIDENCE AWARENESS")
     print("=" * 60)
 
     result = reasoner.reason(
@@ -184,6 +192,8 @@ def test_reasoner():
     pprint(result)
 
     assert result["status"] == "possible"
+    assert result["relationship_match"] is True
+    assert result["direct_match"] is False
     assert result["evidence_found"] is True
     assert result["direct_evidence"] is True
     assert result["context_supported"] is True
@@ -230,9 +240,15 @@ def test_reasoner():
 
     assert result["status"] == "matched"
     assert result["direct_match"] is True
+    assert result["relationship_match"] is False
     assert result["direct_evidence"] is True
+    assert result["evidence_found"] is True
 
     print("✅ Direct evidence reasoning passed")
+
+    # ========================================================
+    # FINAL
+    # ========================================================
 
     print("\n" + "=" * 60)
     print("REQUIREMENT REASONER TEST PASSED")

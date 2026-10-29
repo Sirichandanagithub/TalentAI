@@ -32,10 +32,10 @@ def clamp_score(score: float) -> float:
 
 def calculate_skill_score(
     skill_result: Dict
-) -> float:
+) -> Optional[float]:
 
     if not skill_result:
-        return 0.0
+        return None
 
     matched = skill_result.get(
         "matched",
@@ -59,7 +59,7 @@ def calculate_skill_score(
     )
 
     if total == 0:
-        return 100.0
+        return None
 
     matched_score = sum(
         float(item.get("confidence", 0.0))
@@ -213,68 +213,61 @@ def calculate_education_score(
 
 def calculate_project_score(
     project_result: Dict
-) -> float:
+) -> Optional[float]:
+    """
+    Score project evidence against required job skills.
 
-    if not project_result:
-        return 0.0
+    Return None when project evidence is unavailable.
+    """
 
-    matched = project_result.get(
-        "matched_skills",
-        []
-    )
+    if not project_result or not isinstance(project_result, dict):
+        return None
 
-    unknown = project_result.get(
-        "unknown_skills",
-        []
-    )
+    matched = project_result.get("matched_skills", [])
+    possible = project_result.get("possible_skills", [])
+    unknown = project_result.get("unknown_skills", [])
 
-    total = (
-        len(matched)
-        + len(unknown)
-    )
+    if not all(
+        isinstance(items, list)
+        for items in (matched, possible, unknown)
+    ):
+        return None
+
+    if not (matched or possible or unknown):
+        return None
+
+    if project_result.get("project_count") == 0:
+        return None
+
+    total = len(matched) + len(possible) + len(unknown)
 
     if total == 0:
-        return 100.0
+        return None
 
-    return clamp_score(
-        (len(matched) / total) * 100
-    )
+    score = (
+        len(matched) + 0.5 * len(possible)
+    ) / total * 100
+
+    return clamp_score(score)
 
 
-# ============================================================
-# PREFERRED SKILL SCORE
-# ============================================================
 
 def calculate_preferred_score(
     preferred_result: Dict
-) -> float:
+) -> Optional[float]:
 
     if not preferred_result:
-        return 100.0
+        return None
 
-    matched = preferred_result.get(
-        "matched",
-        []
-    )
+    matched = preferred_result.get("matched", [])
+    possible = preferred_result.get("possible", [])
+    unknown = preferred_result.get("unknown", [])
 
-    possible = preferred_result.get(
-        "possible",
-        []
-    )
+    total = len(matched) + len(possible) + len(unknown)
 
-    unknown = preferred_result.get(
-        "unknown",
-        []
-    )
-
-    total = (
-        len(matched)
-        + len(possible)
-        + len(unknown)
-    )
-
+    # No preferred skills were evaluated.
     if total == 0:
-        return 100.0
+        return None
 
     matched_score = sum(
         float(item.get("confidence", 0.0))
@@ -287,13 +280,9 @@ def calculate_preferred_score(
     )
 
     return clamp_score(
-        (
-            matched_score
-            + possible_score
-        )
-        / total
-        * 100
+        (matched_score + possible_score) / total * 100
     )
+
 
 
 # ============================================================

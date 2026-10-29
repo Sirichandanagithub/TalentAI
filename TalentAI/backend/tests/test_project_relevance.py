@@ -1,3 +1,4 @@
+
 from app.ai.analyzer.project_relevance import ProjectRelevanceAnalyzer
 
 resume_projects = [
@@ -12,17 +13,14 @@ resume_projects = [
             "FastAPI",
             "LangChain",
             "MySQL",
-            "NLP"
-        ]
+            "NLP",
+        ],
     },
     {
         "project_name": "Sales Dashboard",
         "description": "Created data visualization dashboards.",
-        "technologies": [
-            "Python",
-            "Pandas"
-        ]
-    }
+        "technologies": ["Python", "Pandas"],
+    },
 ]
 
 required = [
@@ -30,36 +28,43 @@ required = [
     "Machine Learning",
     "Pandas",
     "SQL",
-    "Data Analysis"
+    "Data Analysis",
 ]
 
-preferred = [
-    "AWS",
-    "TensorFlow"
-]
+preferred = ["AWS", "TensorFlow"]
 
 
 def test_project_relevance():
-
     analyzer = ProjectRelevanceAnalyzer()
 
     result = analyzer.analyze(
         projects=resume_projects,
         required_skills=required,
-        preferred_skills=preferred
+        preferred_skills=preferred,
     )
-
-    print("\nPROJECT RELEVANCE RESULT")
-    print("=" * 60)
-
-    print(result)
 
     assert "overall_project_relevance" in result
     assert "relevant_projects" in result
     assert len(result["relevant_projects"]) == 2
 
-    print("\nTEST PASSED")
 
+def test_description_mention_does_not_prove_skill_usage():
+    analyzer = ProjectRelevanceAnalyzer()
 
-if __name__ == "__main__":
-    test_project_relevance()
+    project = {
+        "project_name": "Customer Dashboard",
+        "description": (
+            "Built a dashboard. SQL is mentioned "
+            "as a future learning goal."
+        ),
+        "technologies": ["Python", "Pandas"],
+    }
+
+    result = analyzer.analyze_project(
+        project=project,
+        required_skills=["SQL"],
+        preferred_skills=[],
+    )
+
+    assert "SQL" not in result["matched_required"]
+    assert "SQL" in result["unknown_required"]

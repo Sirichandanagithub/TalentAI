@@ -33,3 +33,30 @@ class Token(BaseModel):
 # Validate incoming data.
 # Control what data is returned to the client.
 #it uses pydantic
+
+
+from pydantic import BaseModel, Field, model_validator
+
+
+class ChangePassword(BaseModel):
+    current_password: str = Field(min_length=1)
+    new_password: str = Field(min_length=12)
+
+    @model_validator(mode="after")
+    def validate_new_password(self):
+        if self.current_password == self.new_password:
+            raise ValueError(
+                "New password must be different from current password."
+            )
+
+        if self.new_password.strip() != self.new_password:
+            raise ValueError(
+                "New password must not start or end with whitespace."
+            )
+
+        if len(self.new_password.encode("utf-8")) > 72:
+            raise ValueError(
+                "New password must not exceed 72 UTF-8 bytes."
+            )
+
+        return self

@@ -5,6 +5,7 @@ from app.matcher.experience_matcher import (
     extract_experience_period,
     calculate_month_difference,
     months_to_years,
+    parse_duration_text,
 )
 
 
@@ -228,6 +229,9 @@ class SkillExperienceMatcher:
 
         for field in [
             "job_title",
+            "title",
+            "role",
+            "position",
             "company",
             "description",
             "responsibilities",
@@ -277,41 +281,62 @@ class SkillExperienceMatcher:
     # ROLE DURATION
     # ============================================================
 
-    def _get_role_duration(
-        self,
-        role: Dict,
-    ) -> Dict:
+    
+    def _get_role_duration(self, role: Dict) -> Dict:
         """
-        Reuse the central experience date parser.
-
-        This prevents different parts of TalentAI from
-        calculating experience differently.
+        Get role duration from dates or explicit duration fields.
         """
 
         period = extract_experience_period(role)
 
-        if not period:
+        if period:
+            duration_months = calculate_month_difference(
+                period["start"],
+                period["end"],
+            )
 
             return {
-                "duration_months": 0,
-                "duration_years": 0.0,
-                "current": False,
+                "duration_months": duration_months,
+                "duration_years": months_to_years(duration_months),
+                "current": period.get("current", False),
             }
 
-        duration_months = calculate_month_difference(
-            period["start"],
-            period["end"],
+        # Prefer an explicit duration in months or years.
+        try:
+            explicit_months = role.get("months")
+            explicit_years = role.get("years")
+
+            if explicit_months is not None or explicit_years is not None:
+                duration_months = (
+                    int(float(explicit_months or 0))
+                    + round(float(explicit_years or 0) * 12)
+                )
+
+                if duration_months >= 0:
+                    return {
+                        "duration_months": duration_months,
+                        "duration_years": months_to_years(duration_months),
+                        "current": role.get("current", False),
+                    }
+        except (TypeError, ValueError):
+            pass
+
+        # Fall back to the existing text-duration parser.
+        duration_months = parse_duration_text(
+            role.get("duration", "")
         )
 
+        if duration_months is not None:
+            return {
+                "duration_months": duration_months,
+                "duration_years": months_to_years(duration_months),
+                "current": role.get("current", False),
+            }
+
         return {
-            "duration_months": duration_months,
-            "duration_years": months_to_years(
-                duration_months
-            ),
-            "current": period.get(
-                "current",
-                False,
-            ),
+            "duration_months": 0,
+            "duration_years": 0.0,
+            "current": False,
         }
 
     # ============================================================

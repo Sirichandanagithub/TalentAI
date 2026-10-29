@@ -1,27 +1,21 @@
 from datetime import datetime, timedelta, timezone
-from typing import Any
 
-from jose import JWTError, jwt
+from jose import jwt
 from passlib.context import CryptContext
+
+from app.core.config import settings
+
 
 pwd_context = CryptContext(
     schemes=["bcrypt"],
     deprecated="auto",
 )
 
-SECRET_KEY = "your-super-secret-key-change-this-in-production"
-ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 30
-
-
 
 def hash_password(password: str) -> str:
-    print("=" * 50)
-    print("Password received:", password)
-    print("Type:", type(password))
-    print("Length:", len(password))
-    print("=" * 50)
-
+    """
+    Hash a plain-text password using bcrypt.
+    """
     return pwd_context.hash(password)
 
 
@@ -29,6 +23,9 @@ def verify_password(
     plain_password: str,
     hashed_password: str,
 ) -> bool:
+    """
+    Verify a plain-text password against its bcrypt hash.
+    """
     return pwd_context.verify(
         plain_password,
         hashed_password,
@@ -39,6 +36,9 @@ def create_access_token(
     data: dict,
     expires_delta: timedelta | None = None,
 ) -> str:
+    """
+    Create a signed JWT access token.
+    """
 
     to_encode = data.copy()
 
@@ -47,23 +47,34 @@ def create_access_token(
     else:
         expire = (
             datetime.now(timezone.utc)
-            + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+            + timedelta(
+                minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES
+            )
         )
 
-    to_encode.update({"exp": expire})
+    to_encode.update({
+        "exp": expire,
+    })
 
     encoded_jwt = jwt.encode(
         to_encode,
-        SECRET_KEY,
-        algorithm=ALGORITHM,
+        settings.SECRET_KEY,
+        algorithm=settings.ALGORITHM,
     )
 
     return encoded_jwt
 
 
 def decode_access_token(token: str) -> dict:
+    """
+    Decode and validate a JWT access token.
+
+    JWT expiration and signature validation are handled
+    by python-jose.
+    """
+
     return jwt.decode(
         token,
-        SECRET_KEY,
-        algorithms=[ALGORITHM],
+        settings.SECRET_KEY,
+        algorithms=[settings.ALGORITHM],
     )

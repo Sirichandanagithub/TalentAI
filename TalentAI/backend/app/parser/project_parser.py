@@ -1,5 +1,20 @@
 import re
 
+def extract_github_url(text: str) -> str:
+    """Extract the first GitHub repository URL from project text."""
+    if not text:
+        return ""
+
+    match = re.search(
+        r"https?://(?:www\.)?github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+",
+        text,
+        flags=re.IGNORECASE,
+    )
+
+    if not match:
+        return ""
+
+    return match.group(0).rstrip(".,;:!?)\"]'")
 
 # ============================================================
 # CLEAN PROJECT TEXT
@@ -513,7 +528,13 @@ def parse_projects(text: str):
                 "technologies":
                     extract_project_technologies(
                         entry
+                    ),
+
+                "github_url":
+                    extract_github_url(
+                        entry
                     )
+
             }
         )
 

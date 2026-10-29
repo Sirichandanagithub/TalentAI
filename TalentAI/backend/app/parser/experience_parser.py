@@ -304,6 +304,53 @@ def extract_experience_location(text: str):
 # ============================================================
 
 def extract_experience_dates(text: str):
+    """
+    Extract employment dates from resume experience text.
+
+    Supported formats include:
+
+    Numeric:
+        03/2025
+        3/2025
+        03-2025
+        3-2025
+
+    Month + year:
+        March 2025
+        Mar 2025
+        March, 2025
+        Mar, 2025
+
+    Year only:
+        2025
+
+    Ranges:
+        03/2023 - 08/2025
+        03-2023 - 08-2025
+        March 2023 - August 2025
+        2023 - 2025
+
+    Current ranges:
+        03/2023 - Present
+        March 2023 - Current
+        2023 - Now
+        2022 - Till Date
+        2021 - Ongoing
+
+    Also supports date ranges wrapped in brackets:
+        [03/2025-present]
+        [March 2023 - Present]
+        [2023 - 2025]
+    """
+
+    if not text:
+        return None
+
+    # --------------------------------------------------------
+    # Normalize text
+    # --------------------------------------------------------
+
+    text = str(text).strip()
 
     if not text:
         return None
@@ -313,37 +360,106 @@ def extract_experience_dates(text: str):
     # --------------------------------------------------------
 
     month_pattern = (
-        r"(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|"
-        r"May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|"
-        r"Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)"
+        r"(?:"
+        r"Jan(?:uary)?|"
+        r"Feb(?:ruary)?|"
+        r"Mar(?:ch)?|"
+        r"Apr(?:il)?|"
+        r"May|"
+        r"Jun(?:e)?|"
+        r"Jul(?:y)?|"
+        r"Aug(?:ust)?|"
+        r"Sep(?:tember)?|"
+        r"Oct(?:ober)?|"
+        r"Nov(?:ember)?|"
+        r"Dec(?:ember)?"
+        r")"
     )
 
     # --------------------------------------------------------
-    # Current / ongoing employment keywords
+    # Current / ongoing keywords
     # --------------------------------------------------------
 
     current_pattern = (
-        r"(?:Present|Current|Currently|Till\s+Date|"
-        r"To\s+Date|Until\s+Now|Now)"
+        r"(?:"
+        r"Present|"
+        r"Current|"
+        r"Currently|"
+        r"Till\s+Date|"
+        r"To\s+Date|"
+        r"Until\s+Now|"
+        r"Now|"
+        r"Ongoing|"
+        r"On-going|"
+        r"Till\s+Now|"
+        r"Up\s+to\s+Now"
+        r")"
     )
 
     # --------------------------------------------------------
-    # Month + Year -> Present
+    # Date components
+    # --------------------------------------------------------
+
+    numeric_month_year = (
+        r"(?:"
+        r"0?[1-9]|"
+        r"1[0-2]"
+        r")"
+        r"\s*[/.-]\s*"
+        r"(?:19|20)\d{2}"
+    )
+
+    named_month_year = (
+        rf"{month_pattern}"
+        r"\s*,?\s*"
+        r"(?:19|20)\d{2}"
+    )
+
+    year_only = (
+        r"(?:19|20)\d{2}"
+    )
+
+    date_component = (
+        rf"(?:"
+        rf"{numeric_month_year}|"
+        rf"{named_month_year}|"
+        rf"{year_only}"
+        rf")"
+    )
+
+    # --------------------------------------------------------
+    # Remove surrounding brackets for easier matching
     #
     # Example:
-    # April 2025 - Present
-    # May 2026 - Current
+    #   [03/2025-present]
+    # becomes:
+    #   03/2025-present
+    # --------------------------------------------------------
+
+    searchable_text = re.sub(
+        r"[\[\]\(\)]",
+        " ",
+        text
+    )
+
+    # --------------------------------------------------------
+    # 1. DATE RANGE -> CURRENT
+    #
+    # Examples:
+    #   03/2025 - Present
+    #   03-2025 - Current
+    #   March 2025 - Present
+    #   2023 - Now
+    #   2022 - Ongoing
     # --------------------------------------------------------
 
     current_date_range_pattern = re.search(
-        rf"\b("
-        rf"{month_pattern}\s+(?:19|20)\d{{2}}"
-        rf"|"
-        rf"(?:19|20)\d{{2}}"
-        rf")"
-        rf"\s*[-–—]\s*"
-        rf"({current_pattern})\b",
-        text,
+        rf"({date_component})"
+        rf"\s*"
+        rf"(?:[-–—]|to|until|through)"
+        rf"\s*"
+        rf"({current_pattern})",
+        searchable_text,
         re.IGNORECASE
     )
 
@@ -359,22 +475,23 @@ def extract_experience_dates(text: str):
         }
 
     # --------------------------------------------------------
-    # Month + Year range
+    # 2. DATE RANGE -> EXPLICIT END DATE
     #
-    # Example:
-    # April 2024 - May 2025
-    # 2023 - 2025
+    # Examples:
+    #   03/2023 - 08/2025
+    #   03-2023 - 08-2025
+    #   March 2023 - August 2025
+    #   2023 - 2025
+    #   Jan 2022 to Dec 2024
     # --------------------------------------------------------
 
     date_range_pattern = re.search(
-        rf"\b("
-        rf"(?:{month_pattern}\s+)?(?:19|20)\d{{2}}"
-        rf")"
-        rf"\s*[-–—]\s*"
-        rf"("
-        rf"(?:{month_pattern}\s+)?(?:19|20)\d{{2}}"
-        rf")\b",
-        text,
+        rf"({date_component})"
+        rf"\s*"
+        rf"(?:[-–—]|to|through)"
+        rf"\s*"
+        rf"({date_component})",
+        searchable_text,
         re.IGNORECASE
     )
 
@@ -390,38 +507,68 @@ def extract_experience_dates(text: str):
         }
 
     # --------------------------------------------------------
-    # Single Month + Year
+    # 3. SINCE / FROM DATE
     #
-    # Example:
-    # April 2025
+    # Examples:
+    #   Since 2022
+    #   Since March 2023
+    #   From 2021
+    #   From March 2023
+    # --------------------------------------------------------
+
+    since_pattern = re.search(
+        rf"\b(?:Since|From)\s+"
+        rf"({date_component})\b",
+        searchable_text,
+        re.IGNORECASE
+    )
+
+    if since_pattern:
+
+        start = since_pattern.group(1).strip()
+
+        return {
+            "start": start,
+            "end": "Present",
+            "current": True
+        }
+
+    # --------------------------------------------------------
+    # 4. SINGLE DATE
+    #
+    # Examples:
+    #   March 2025
+    #   Mar 2025
+    #   03/2025
+    #   03-2025
     # --------------------------------------------------------
 
     single_date_pattern = re.search(
-        rf"\b("
-        rf"{month_pattern}\s+(?:19|20)\d{{2}}"
-        rf")\b",
-        text,
+        rf"({named_month_year}|{numeric_month_year})",
+        searchable_text,
         re.IGNORECASE
     )
 
     if single_date_pattern:
 
+        start = single_date_pattern.group(1).strip()
+
         return {
-            "start": single_date_pattern.group(1).strip(),
+            "start": start,
             "end": None,
             "current": False
         }
 
     # --------------------------------------------------------
-    # Single Year
+    # 5. SINGLE YEAR
     #
     # Example:
-    # 2025
+    #   2025
     # --------------------------------------------------------
 
     year_pattern = re.search(
-        r"\b((?:19|20)\d{2})\b",
-        text
+        rf"\b({year_only})\b",
+        searchable_text
     )
 
     if year_pattern:
@@ -431,6 +578,10 @@ def extract_experience_dates(text: str):
             "end": None,
             "current": False
         }
+
+    # --------------------------------------------------------
+    # Nothing recognized
+    # --------------------------------------------------------
 
     return None
 # ============================================================

@@ -469,10 +469,11 @@ class ContextMatcher:
             ):
                 continue
 
-            project_name = project.get(
-                "project_name",
-                ""
-            )
+            project_name = (
+                project.get("project_name")
+                or project.get("name")
+                or ""
+                )
 
             description = project.get(
                 "description",

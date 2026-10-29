@@ -12,8 +12,13 @@ def create_user(
     db: Session,
     user_data: UserCreate,
 ) -> User:
+    """
+    Create a new user with a securely hashed password.
+    """
 
-    hashed_password = hash_password(user_data.password)
+    hashed_password = hash_password(
+        user_data.password
+    )
 
     user = User(
         full_name=user_data.full_name,
@@ -34,25 +39,26 @@ def authenticate_user(
     email: str,
     password: str,
 ) -> User | None:
-    print("Email received:", email)
+    """
+    Authenticate a user using email and password.
+
+    Returns the user when credentials are valid.
+    Returns None when authentication fails.
+    """
 
     user = (
         db.query(User)
         .filter(User.email == email)
         .first()
     )
-    print("User found:", user)
-    
+
     if user is None:
         return None
 
-    print("Password entered:", password)
-    print("Password hash:", user.password_hash)
-
-    is_valid = verify_password(password, user.password_hash)
-    print("Password valid:", is_valid)
-
-    if not is_valid:
+    if not verify_password(
+        password,
+        user.password_hash,
+    ):
         return None
 
     return user

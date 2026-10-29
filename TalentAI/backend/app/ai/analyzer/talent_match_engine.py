@@ -633,6 +633,19 @@ class TalentMatchEngine:
                 evidence_result=evidence_result
             )
 
+            print(
+                "\n[CONFIDENCE DEBUG]",
+                {
+                    "requirement": requirement,
+                    "match_score": reasoning_result.get("match_score"),
+                    "context_score": reasoning_result.get("context_score"),
+                    "evidence_score": reasoning_result.get("evidence_score"),
+                    #"confidence": reasoning_result.get("confidence"),
+                    "status": reasoning_result.get("status"),
+                
+                }
+            )
+
             result["reasoning"] = reasoning_result
 
             # ------------------------------------------------
@@ -698,6 +711,18 @@ class TalentMatchEngine:
             "experience",
             {}
         )
+
+        if isinstance(requirement, dict):
+            requirement = dict(requirement)
+
+            if (
+                "minimum_years" not in requirement
+                and "min_years" in requirement
+            ):
+
+                requirement["minimum_years"] = (
+                    requirement["min_years"]
+                )
 
         if experience_matcher is None:
 
@@ -779,6 +804,19 @@ class TalentMatchEngine:
             experience_requirement = (
                 job.get("experience", {}) or {}
             )
+
+            if isinstance(experience_requirement, dict):
+                experience_requirement = dict(experience_requirement)
+
+                if (
+                    "minimum_years" not in experience_requirement
+                    and "min_years" in experience_requirement
+                ):
+
+                    experience_requirement["minimum_years"] = (
+                        experience_requirement["min_years"]
+                    )
+
 
             required_years = (
                 experience_requirement.get(
@@ -1188,7 +1226,8 @@ class TalentMatchEngine:
         return {
             "matched_skills": matched_skills,
             "possible_skills": possible_skills,
-            "unknown_skills": unknown_skills
+            "unknown_skills": unknown_skills,
+            "project_count": len(projects)
         }
 
     # ========================================================
@@ -1506,9 +1545,9 @@ class TalentMatchEngine:
         )
 
         return {
-
-            "job_title": job.get(
-                "job_title"
+            "job_title": (job.get("title")
+            or job.get("job_title")
+            or ""
             ),
 
             "resume_skills": candidate_skills,
@@ -1885,7 +1924,11 @@ class TalentMatchEngine:
         print("=" * 60)
         
         candidate_job_reasoning = self.reason_candidate_job(
-            job_title=job.get("job_title", ""),
+            job_title=(
+                job.get("title")
+                or job.get("job_title")
+                or ""
+            ),
             match_result=match_result,
             context=context,
             evidence=evidence,
@@ -1906,7 +1949,7 @@ class TalentMatchEngine:
         
 
         return {
-            "job_title": job.get("job_title"),
+            "job_title": job.get("title") or job.get("job_title") or "",
             "ats_score": ats_result.get("score", 0.0),
             "classification": ats_result.get(
                 "classification",

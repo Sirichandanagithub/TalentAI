@@ -1,510 +1,290 @@
-from typing import Dict, List
+
+import re
+from typing import Any, Dict, List
 
 from app.ai.analyzer.hybrid_matcher import HybridMatcher
 
 
 class ProjectRelevanceAnalyzer:
-    """
-    Analyze how relevant resume projects are to a target job.
-
-    The analyzer evaluates:
-    - technology / skill overlap
-    - required skill coverage
-    - preferred skill coverage
-    - project description evidence
-    - overall project relevance
-    """
-
-    REQUIRED_MATCH_WEIGHT = 1.0
-    REQUIRED_POSSIBLE_WEIGHT = 0.5
-    PREFERRED_MATCH_WEIGHT = 0.25
-
-    HIGH_THRESHOLD = 0.75
-    MODERATE_THRESHOLD = 0.45
-    LOW_THRESHOLD = 0.20
-
     def __init__(self):
         self.matcher = HybridMatcher()
 
-    # ============================================================
-    # NORMALIZATION
-    # ============================================================
+    @staticmethod
+    def _normalize_text(text: str) -> str:
+        return " ".join(str(text or "").lower().split())
 
-    def _normalize_text(self, value) -> str:
-        if value is None:
-            return ""
-
-        return str(value).strip().lower()
-
-    # ============================================================
-    # PROJECT TEXT
-    # ============================================================
-
-    def _project_text(self, project: Dict) -> str:
-        """
-        Build searchable text from the project.
-        """
-
-        project_name = project.get(
-            "project_name",
-            ""
-        )
-
-        description = project.get(
-            "description",
-            ""
-        )
-
-        raw_text = project.get(
-            "raw_text",
-            ""
-        )
-
-        technologies = project.get(
-            "technologies",
-            []
-        )
-
-        if not isinstance(technologies, list):
-            technologies = [technologies]
-
-        technology_text = " ".join(
-            str(item)
-            for item in technologies
-            if item
-        )
-
-        return " ".join(
-            [
-                str(project_name),
-                str(description),
-                str(raw_text),
-                technology_text
-            ]
-        ).strip()
-
-    # ============================================================
-    # CANDIDATE SKILLS
-    # ============================================================
-
-    def _project_skills(
-        self,
-        project: Dict
-    ) -> List[str]:
-        """
-        Extract skills/technologies explicitly associated
-        with the project.
-        """
-
-        technologies = project.get(
-            "technologies",
-            []
-        )
-
-        if not technologies:
-            return []
+    @staticmethod
+    def _project_text(project: Dict[str, Any]) -> str:
+        technologies = project.get("technologies", [])
 
         if isinstance(technologies, str):
             technologies = [technologies]
 
+        return " ".join(
+            str(value)
+            for value in [
+                project.get("project_name", ""),
+                project.get("name", ""),
+                project.get("description", ""),
+                project.get("raw_text", ""),
+                " ".join(str(item) for item in technologies),
+            ]
+            if value
+        )
+
+    @staticmethod
+    def _project_skills(project: Dict[str, Any]) -> List[str]:
+        technologies = project.get("technologies", [])
+
+        if isinstance(technologies, str):
+            technologies = [technologies]
+
+        if not isinstance(technologies, (list, tuple, set)):
+            return []
+
         return [
-            str(skill).strip()
-            for skill in technologies
-            if str(skill).strip()
+            str(technology).strip()
+            for technology in technologies
+            if technology and str(technology).strip()
         ]
 
-    # ============================================================
-    # TITLE RELEVANCE
-    # ============================================================
+    @staticmethod
+    def _description_mentions_skill(
+        skill: str,
+        project: Dict[str, Any],
+    ) -> bool:
+        description = " ".join(
+            str(project.get(field, "") or "")
+            for field in ("description", "raw_text")
+        )
+
+        normalized_skill = str(skill or "").strip()
+
+        if not normalized_skill or not description:
+            return False
+
+        pattern = (
+            r"(?<!\w)"
+            + re.escape(normalized_skill)
+            + r"(?!\w)"
+        )
+
+        return bool(
+            re.search(
+                pattern,
+                description,
+                flags=re.IGNORECASE,
+            )
+        )
 
     def _title_relevance(
         self,
         project_name: str,
-        required_skills: List[str]
+        required_skills: List[str],
     ) -> float:
-        """
-        Lightweight title relevance signal.
-
-        This is intentionally conservative. We do not assume
-        that a project title alone proves a skill.
-        """
-
-        if not project_name:
+        if not project_name or not required_skills:
             return 0.0
 
-        title_words = set(
-            self._normalize_text(project_name).split()
-        )
-
-        if not title_words:
-            return 0.0
-
+        normalized_title = self._normalize_text(project_name)
         matches = 0
 
         for skill in required_skills:
+            normalized_skill = self._normalize_text(skill)
 
-            skill_words = set(
-                self._normalize_text(skill).split()
-            )
-
-            if skill_words and skill_words.intersection(
-                title_words
+            if (
+                normalized_skill
+                and normalized_skill in normalized_title
             ):
                 matches += 1
 
-        if not required_skills:
-            return 0.0
-
-        return round(
-            matches / len(required_skills),
-            2
-        )
-
-    # ============================================================
-    # ANALYZE SINGLE PROJECT
-    # ============================================================
+        return min(matches / len(required_skills), 1.0)
 
     def analyze_project(
         self,
-        project: Dict,
+        project: Dict[str, Any],
         required_skills: List[str],
-        preferred_skills: List[str]
-    ) -> Dict:
-        """
-        Analyze one project against the job requirements.
-        """
-
-        project_name = project.get(
-            "project_name"
+        preferred_skills: List[str],
+    ) -> Dict[str, Any]:
+        project_name = (
+            project.get("project_name")
+            or project.get("name")
+            or "Unnamed Project"
         )
 
-        description = project.get(
-            "description"
-        )
-
-        technologies = self._project_skills(
-            project
-        )
-
-        project_text = self._project_text(
-            project
-        )
+        # Explicit technologies are the strongest evidence.
+        technologies = self._project_skills(project)
 
         matched_required = []
         possible_required = []
         unknown_required = []
 
-        evidence = []
-
-        # --------------------------------------------------------
-        # REQUIRED SKILLS
-        # --------------------------------------------------------
-
-        for skill in required_skills:
-
-            result = self.matcher.match_requirement(
-                skill,
-                technologies
-            )
-
-            status = result.get(
-                "status",
-                "unknown"
-            )
-
-            if status == "matched":
-
-                matched_required.append(skill)
-
-                evidence.append(
-                    f"Project explicitly uses {skill}"
-                )
-
-            elif status == "possible":
-
-                possible_required.append(skill)
-
-                evidence.append(
-                    f"Project has related evidence for {skill}"
-                )
-
-            else:
-                # ------------------------------------------------
-                # Technology list may be empty or incomplete.
-                # Check project description as supporting evidence.
-                # ------------------------------------------------
-
-                normalized_skill = self._normalize_text(
-                    skill
-                )
-
-                normalized_text = self._normalize_text(
-                    project_text
-                )
-
-                if (
-                    normalized_skill
-                    and normalized_skill in normalized_text
-                ):
-                    matched_required.append(skill)
-
-                    evidence.append(
-                        f"Project description mentions {skill}"
-                    )
-
-                else:
-                    unknown_required.append(skill)
-
-        # --------------------------------------------------------
-        # PREFERRED SKILLS
-        # --------------------------------------------------------
-
         matched_preferred = []
         possible_preferred = []
         unknown_preferred = []
 
-        for skill in preferred_skills:
+        evidence = []
 
+        # Assess required skills.
+        for skill in required_skills:
             result = self.matcher.match_requirement(
                 skill,
-                technologies
+                technologies,
             )
 
-            status = result.get(
-                "status",
-                "unknown"
-            )
+            status = result.get("status", "unknown")
 
             if status == "matched":
-
-                matched_preferred.append(skill)
-
+                matched_required.append(skill)
                 evidence.append(
-                    f"Project explicitly uses preferred skill {skill}"
+                    f"Project technology evidence matches {skill}"
                 )
 
             elif status == "possible":
+                possible_required.append(skill)
+                evidence.append(
+                    f"Project has related technology evidence for {skill}"
+                )
 
-                possible_preferred.append(skill)
+            elif self._description_mentions_skill(skill, project):
+                possible_required.append(skill)
+                evidence.append(
+                    f"Project description mentions {skill}; "
+                    "explicit technology evidence is not confirmed"
+                )
 
             else:
+                unknown_required.append(skill)
 
-                normalized_skill = self._normalize_text(
-                    skill
-                )
-
-                normalized_text = self._normalize_text(
-                    project_text
-                )
-
-                if (
-                    normalized_skill
-                    and normalized_skill in normalized_text
-                ):
-                    matched_preferred.append(skill)
-
-                    evidence.append(
-                        f"Project description mentions preferred skill {skill}"
-                    )
-
-                else:
-                    unknown_preferred.append(skill)
-
-        # --------------------------------------------------------
-        # REQUIRED SKILL SCORE
-        # --------------------------------------------------------
-
-        required_count = len(
-            required_skills
-        )
-
-        if required_count:
-
-            required_score = (
-                len(matched_required)
-                * self.REQUIRED_MATCH_WEIGHT
-                +
-                len(possible_required)
-                * self.REQUIRED_POSSIBLE_WEIGHT
-            ) / required_count
-
-        else:
-            required_score = 0.0
-
-        # --------------------------------------------------------
-        # PREFERRED SKILL SCORE
-        # --------------------------------------------------------
-
-        preferred_count = len(
-            preferred_skills
-        )
-
-        if preferred_count:
-
-            preferred_score = (
-                len(matched_preferred)
-                * self.PREFERRED_MATCH_WEIGHT
-            ) / (
-                preferred_count
-                * self.PREFERRED_MATCH_WEIGHT
+        # Assess preferred skills.
+        for skill in preferred_skills:
+            result = self.matcher.match_requirement(
+                skill,
+                technologies,
             )
 
-        else:
-            preferred_score = 0.0
+            status = result.get("status", "unknown")
 
-        # --------------------------------------------------------
-        # TITLE SCORE
-        # --------------------------------------------------------
+            if status == "matched":
+                matched_preferred.append(skill)
+                evidence.append(
+                    f"Project technology evidence matches "
+                    f"preferred skill {skill}"
+                )
+
+            elif status == "possible":
+                possible_preferred.append(skill)
+                evidence.append(
+                    f"Project has related technology evidence "
+                    f"for preferred skill {skill}"
+                )
+
+            elif self._description_mentions_skill(skill, project):
+                possible_preferred.append(skill)
+                evidence.append(
+                    f"Project description mentions preferred skill "
+                    f"{skill}; explicit technology evidence is not confirmed"
+                )
+
+            else:
+                unknown_preferred.append(skill)
+
+        # Preserve the existing scoring weights.
+        required_count = len(required_skills)
+        preferred_count = len(preferred_skills)
+
+        if required_count:
+            required_score = (
+                len(matched_required)
+                + (len(possible_required) * 0.5)
+            ) / required_count
+        else:
+            required_score = 1.0
+
+        if preferred_count:
+            preferred_score = (
+                len(matched_preferred)
+                + (len(possible_preferred) * 0.5)
+            ) / preferred_count
+        else:
+            preferred_score = 1.0
 
         title_score = self._title_relevance(
-            project_name or "",
-            required_skills
+            project_name,
+            required_skills,
         )
-
-        # --------------------------------------------------------
-        # FINAL SCORE
-        # --------------------------------------------------------
 
         relevance_score = (
             required_score * 0.75
-            +
-            preferred_score * 0.10
-            +
-            title_score * 0.15
+            + preferred_score * 0.10
+            + title_score * 0.15
         )
 
         relevance_score = round(
-            min(relevance_score, 1.0),
-            2
+            max(0.0, min(relevance_score, 1.0)),
+            4,
         )
 
-        # --------------------------------------------------------
-        # STATUS
-        # --------------------------------------------------------
-
-        if relevance_score >= self.HIGH_THRESHOLD:
-
-            status = "high"
-
-        elif relevance_score >= self.MODERATE_THRESHOLD:
-
-            status = "moderate"
-
-        elif relevance_score >= self.LOW_THRESHOLD:
-
-            status = "low"
-
+        if relevance_score >= 0.75:
+            relevance_level = "high"
+        elif relevance_score >= 0.45:
+            relevance_level = "moderate"
+        elif relevance_score >= 0.20:
+            relevance_level = "low"
         else:
-
-            status = "none"
+            relevance_level = "very_low"
 
         return {
             "project_name": project_name,
-            "description": description,
-            "technologies": technologies,
-
             "relevance_score": relevance_score,
-            "status": status,
-
-            "required_skill_score": round(
-                required_score,
-                2
-            ),
-
-            "preferred_skill_score": round(
-                preferred_score,
-                2
-            ),
-
-            "title_relevance": title_score,
-
+            "relevance_level": relevance_level,
+            "status": relevance_level,
+            "required_skill_score": round(required_score, 4),
+            "preferred_skill_score": round(preferred_score, 4),
+            "title_relevance": round(title_score, 4),
             "matched_required": matched_required,
             "possible_required": possible_required,
             "unknown_required": unknown_required,
-
             "matched_preferred": matched_preferred,
             "possible_preferred": possible_preferred,
             "unknown_preferred": unknown_preferred,
-
-            "evidence": evidence
+            "evidence": evidence,
         }
-
-    # ============================================================
-    # ANALYZE ALL PROJECTS
-    # ============================================================
 
     def analyze(
         self,
-        projects: List[Dict],
+        projects: List[Dict[str, Any]],
         required_skills: List[str],
-        preferred_skills: List[str] = None
-    ) -> Dict:
-        """
-        Analyze all candidate projects.
-        """
-
-        preferred_skills = preferred_skills or []
-        projects = projects or []
-
-        if not projects:
-
-            return {
-                "overall_project_relevance": 0.0,
-                "relevant_projects": [],
-                "project_count": 0
-            }
-
-        analyzed_projects = []
+        preferred_skills: List[str],
+    ) -> Dict[str, Any]:
+        project_results = []
 
         for project in projects:
-
             result = self.analyze_project(
                 project=project,
                 required_skills=required_skills,
-                preferred_skills=preferred_skills
+                preferred_skills=preferred_skills,
             )
+            project_results.append(result)
 
-            analyzed_projects.append(
-                result
-            )
-
-        # --------------------------------------------------------
-        # Overall relevance
-        # --------------------------------------------------------
-
-        scores = [
-            project["relevance_score"]
-            for project in analyzed_projects
-        ]
-
-        overall_relevance = round(
-            sum(scores) / len(scores),
-            2
+        project_results.sort(
+            key=lambda item: item["relevance_score"],
+            reverse=True,
         )
 
+        if project_results:
+            overall_project_relevance = round(
+                sum(
+                    item["relevance_score"]
+                    for item in project_results
+                ) / len(project_results),
+                4,
+            )
+        else:
+            overall_project_relevance = 0.0
+
         return {
-            "overall_project_relevance": overall_relevance,
-            "project_count": len(
-                analyzed_projects
-            ),
-            "relevant_projects": analyzed_projects
+            "overall_project_relevance": overall_project_relevance,
+            "relevant_projects": project_results,
+            "project_count": len(project_results),
+            "total_projects_analyzed": len(project_results),
         }
-
-
-# ================================================================
-# CONVENIENCE FUNCTION
-# ================================================================
-
-def analyze_project_relevance(
-    projects: List[Dict],
-    required_skills: List[str],
-    preferred_skills: List[str] = None
-) -> Dict:
-
-    analyzer = ProjectRelevanceAnalyzer()
-
-    return analyzer.analyze(
-        projects=projects,
-        required_skills=required_skills,
-        preferred_skills=preferred_skills
-    )

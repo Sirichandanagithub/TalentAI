@@ -1,4 +1,7 @@
 from typing import Any
+from app.matcher.experience_matcher import (
+    calculate_experience_details,
+)
 
 
 class RelevantExperienceAnalyzer:
@@ -9,19 +12,20 @@ class RelevantExperienceAnalyzer:
     Responsibilities:
         1. Calculate job-title relevance
         2. Calculate skill relevance
-        3. Get role duration from central experience matcher
+        3. Get role duration from the central experience matcher
         4. Calculate role-level relevance
         5. Calculate weighted relevant experience
         6. Calculate overall candidate experience
 
     Important:
-        Date calculations are NOT duplicated here.
+        Date parsing and duration calculation are NOT duplicated here.
 
         The central experience matcher is responsible for:
             - start date
             - end date
-            - duration months
-            - duration years
+            - current status
+            - duration in months
+            - duration in years
     """
 
     # ============================================================
@@ -43,6 +47,13 @@ class RelevantExperienceAnalyzer:
     # ============================================================
 
     def __init__(self):
+        """
+        No matcher object is required.
+
+        The central experience matcher exposes module-level
+        functions, so we use calculate_experience_details()
+        directly.
+        """
         pass
 
     # ============================================================
@@ -81,6 +92,18 @@ class RelevantExperienceAnalyzer:
         return self._normalize_text(
             role.get(
                 "job_title",
+                ""
+            )
+            or role.get(
+                "title",
+                ""  
+            )
+            or role.get(
+                "role",
+                ""
+            )
+            or role.get(
+                "position", 
                 ""
             )
         )
@@ -133,6 +156,10 @@ class RelevantExperienceAnalyzer:
 
         if not role_title or not target_title:
             return 0.0
+
+        # --------------------------------------------------------
+        # Exact match
+        # --------------------------------------------------------
 
         if role_title == target_title:
             return 1.0
@@ -188,39 +215,35 @@ class RelevantExperienceAnalyzer:
         # Related AI / Data roles
         # --------------------------------------------------------
 
-        related_role_terms = {
-            "data scientist": {
-                "data",
-                "scientist",
-                "machine",
-                "learning",
-                "ai",
-                "artificial",
-                "intelligence",
-                "ml",
-            },
-            "machine learning engineer": {
-                "machine",
-                "learning",
-                "ml",
-                "ai",
-                "artificial",
-                "intelligence",
-                "data",
-            },
-            "ai engineer": {
-                "ai",
-                "artificial",
-                "intelligence",
-                "machine",
-                "learning",
-                "ml",
-                "data",
-            },
+        related_role_pairs = {
+            (
+                "data scientist",
+                "ai engineer"
+            ),
+            (
+                "data scientist",
+                "machine learning engineer"
+            ),
+            (
+                "ai engineer",
+                "data scientist"
+            ),
+            (
+                "ai engineer",
+                "machine learning engineer"
+            ),
+            (
+                "machine learning engineer",
+                "data scientist"
+            ),
+            (
+                "machine learning engineer",
+                "ai engineer"
+            ),
         }
 
         # --------------------------------------------------------
-        # Normalize common seniority / level prefixes
+        # Normalize common seniority prefixes
         # --------------------------------------------------------
 
         role_title_family = role_title_clean
@@ -245,35 +268,57 @@ class RelevantExperienceAnalyzer:
                 )
 
         # --------------------------------------------------------
-        # Explicit AI / Data role relationships
+        # Explicit related role pairs
         # --------------------------------------------------------
-
-        related_role_pairs = {
-            ("data scientist", "ai engineer"),
-            (
-                "data scientist",
-                "machine learning engineer"
-            ),
-            ("ai engineer", "data scientist"),
-            (
-                "ai engineer",
-                "machine learning engineer"
-            ),
-            (
-                "machine learning engineer",
-                "data scientist"
-            ),
-            (
-                "machine learning engineer",
-                "ai engineer"
-            ),
-        }
 
         if (
             target_title,
             role_title_family
         ) in related_role_pairs:
             return 0.50
+
+        if (
+            role_title_family,
+            target_title
+        ) in related_role_pairs:
+            return 0.50
+
+        # --------------------------------------------------------
+        # Related role terms
+        # --------------------------------------------------------
+
+        related_role_terms = {
+            "data scientist": {
+                "data",
+                "scientist",
+                "machine",
+                "learning",
+                "ai",
+                "artificial",
+                "intelligence",
+                "ml",
+            },
+
+            "machine learning engineer": {
+                "machine",
+                "learning",
+                "ml",
+                "ai",
+                "artificial",
+                "intelligence",
+                "data",
+            },
+
+            "ai engineer": {
+                "ai",
+                "artificial",
+                "intelligence",
+                "machine",
+                "learning",
+                "ml",
+                "data",
+            },
+        }
 
         target_related_terms = (
             related_role_terms.get(
@@ -308,7 +353,12 @@ class RelevantExperienceAnalyzer:
         role: dict,
         required_skills: list,
         resume: dict | None = None
-    ) -> tuple[float, list, list, list]:
+    ) -> tuple[
+        float,
+        list,
+        list,
+        list
+    ]:
         """
         Calculate how strongly the candidate's experience role
         is related to the required skills.
@@ -319,27 +369,13 @@ class RelevantExperienceAnalyzer:
             2. Candidate-level skills
             3. Candidate-level projects
 
-        Important:
-
-            Candidate-level skills and project evidence establish
-            relevance only.
-
-            They do NOT add employment duration.
-
-        Returns:
-
-            (
-                score,
-                matched_skills,
-                possible_skills,
-                unknown_skills
-            )
+        Candidate-level skills and projects establish relevance
+        only. They do NOT add employment duration.
         """
 
         resume = resume or {}
 
         if not required_skills:
-
             return (
                 0.0,
                 [],
@@ -348,7 +384,7 @@ class RelevantExperienceAnalyzer:
             )
 
         # ========================================================
-        # 1. BUILD TEXT FROM EXPERIENCE ROLE
+        # BUILD ROLE TEXT
         # ========================================================
 
         role_text_parts = []
@@ -372,7 +408,7 @@ class RelevantExperienceAnalyzer:
                 )
 
         # ========================================================
-        # 2. ADD SKILLS ATTACHED TO ROLE
+        # ROLE SKILLS
         # ========================================================
 
         role_skills = role.get(
@@ -426,7 +462,7 @@ class RelevantExperienceAnalyzer:
             )
 
         # ========================================================
-        # 3. BUILD CANDIDATE-LEVEL SKILL TEXT
+        # CANDIDATE SKILLS
         # ========================================================
 
         candidate_skills = resume.get(
@@ -458,7 +494,7 @@ class RelevantExperienceAnalyzer:
             candidate_skill_text = ""
 
         # ========================================================
-        # 4. BUILD PROJECT EVIDENCE
+        # PROJECT EVIDENCE
         # ========================================================
 
         project_text_parts = []
@@ -472,10 +508,7 @@ class RelevantExperienceAnalyzer:
             projects,
             list
         ):
-
-            projects = [
-                projects
-            ]
+            projects = [projects]
 
         for project in projects:
 
@@ -532,7 +565,7 @@ class RelevantExperienceAnalyzer:
         )
 
         # ========================================================
-        # 5. NORMALIZE EVIDENCE
+        # NORMALIZE EVIDENCE
         # ========================================================
 
         role_text_normalized = (
@@ -556,7 +589,7 @@ class RelevantExperienceAnalyzer:
         )
 
         # ========================================================
-        # 6. ALIASES
+        # ALIASES
         # ========================================================
 
         aliases = {
@@ -611,7 +644,7 @@ class RelevantExperienceAnalyzer:
         }
 
         # ========================================================
-        # 7. RELATED SKILLS
+        # RELATED SKILLS
         # ========================================================
 
         related_skills = {
@@ -666,7 +699,7 @@ class RelevantExperienceAnalyzer:
         }
 
         # ========================================================
-        # 8. CHECK REQUIRED SKILLS
+        # CHECK REQUIRED SKILLS
         # ========================================================
 
         matched_skills = []
@@ -770,7 +803,7 @@ class RelevantExperienceAnalyzer:
                 )
 
         # ========================================================
-        # 9. CALCULATE SCORE
+        # CALCULATE SKILL SCORE
         # ========================================================
 
         total_skills = (
@@ -798,7 +831,7 @@ class RelevantExperienceAnalyzer:
             ) / total_skills
 
         # ========================================================
-        # 10. SAFETY CLAMP
+        # SAFETY CLAMP
         # ========================================================
 
         score = max(
@@ -808,10 +841,6 @@ class RelevantExperienceAnalyzer:
                 score
             )
         )
-
-        # ========================================================
-        # 11. RETURN FOUR VALUES
-        # ========================================================
 
         return (
             round(
@@ -844,6 +873,93 @@ class RelevantExperienceAnalyzer:
         return "low"
 
     # ============================================================
+    # GET ROLE DURATION
+    # ============================================================
+
+    def _get_role_duration(
+        self,
+        role: dict
+    ) -> tuple[float, float]:
+        """
+        Get duration from the centralized experience matcher.
+
+        Returns:
+            duration_months,
+            duration_years
+        """
+
+        duration_months = role.get(
+            "duration_months",
+            0.0
+        )
+
+        duration_years = role.get(
+            "duration_years",
+            0.0
+        )
+
+        try:
+
+            duration_months = float(
+                duration_months
+            )
+
+        except (
+            TypeError,
+            ValueError
+        ):
+
+            duration_months = 0.0
+
+        try:
+
+            duration_years = float(
+                duration_years
+            )
+
+        except (
+            TypeError,
+            ValueError
+        ):
+
+            duration_years = 0.0
+
+        # If only months are available,
+        # derive years.
+
+        if (
+            duration_years == 0.0
+            and
+            duration_months > 0.0
+        ):
+
+            duration_years = (
+                duration_months
+                /
+                12.0
+            )
+
+        # If only years are available,
+        # derive months.
+
+        if (
+            duration_months == 0.0
+            and
+            duration_years > 0.0
+        ):
+
+            duration_months = (
+                duration_years
+                *
+                12.0
+            )
+
+        return (
+            duration_months,
+            duration_years
+        )
+
+    # ============================================================
     # ANALYZE SINGLE ROLE
     # ============================================================
 
@@ -856,12 +972,6 @@ class RelevantExperienceAnalyzer:
     ) -> dict:
         """
         Analyze relevance of one professional experience role.
-
-        Employment duration is taken from the role's existing
-        duration fields when available.
-
-        Candidate-level skills and projects are used only for
-        relevance evidence.
         """
 
         resume = resume or {}
@@ -923,90 +1033,15 @@ class RelevantExperienceAnalyzer:
         )
 
         # ========================================================
-        # GET ROLE DURATION
+        # ROLE DURATION
         # ========================================================
 
-        duration_months = role.get(
-            "duration_months"
+        (
+            duration_months,
+            duration_years
+        ) = self._get_role_duration(
+            role
         )
-
-        duration_years = role.get(
-            "duration_years"
-        )
-
-        # If duration years is unavailable but months exist,
-        # derive years from months.
-        if (
-            duration_years is None
-            and
-            duration_months is not None
-        ):
-
-            try:
-
-                duration_years = (
-                    float(duration_months)
-                    /
-                    12.0
-                )
-
-            except (
-                TypeError,
-                ValueError
-            ):
-
-                duration_years = 0.0
-
-        if duration_months is None:
-
-            if duration_years is not None:
-
-                try:
-
-                    duration_months = (
-                        float(duration_years)
-                        *
-                        12.0
-                    )
-
-                except (
-                    TypeError,
-                    ValueError
-                ):
-
-                    duration_months = 0.0
-
-            else:
-
-                duration_months = 0.0
-
-        try:
-
-            duration_months = float(
-                duration_months
-            )
-
-        except (
-            TypeError,
-            ValueError
-        ):
-
-            duration_months = 0.0
-
-        try:
-
-            duration_years = float(
-                duration_years
-                if duration_years is not None
-                else 0.0
-            )
-
-        except (
-            TypeError,
-            ValueError
-        ):
-
-            duration_years = 0.0
 
         # ========================================================
         # WEIGHTED RELEVANT EXPERIENCE
@@ -1019,6 +1054,49 @@ class RelevantExperienceAnalyzer:
         )
 
         # ========================================================
+        # DATE VALUES
+        # ========================================================
+
+        dates = role.get(
+            "dates",
+            {}
+        )
+
+        if not isinstance(
+            dates,
+            dict
+        ):
+            dates = {}
+
+        start = role.get(
+            "start"
+        )
+
+        if start is None:
+            start = dates.get(
+                "start"
+            )
+
+        end = role.get(
+            "end"
+        )
+
+        if end is None:
+            end = dates.get(
+                "end"
+            )
+
+        current = role.get(
+            "current"
+        )
+
+        if current is None:
+            current = dates.get(
+                "current",
+                False
+            )
+
+        # ========================================================
         # RETURN ROLE RESULT
         # ========================================================
 
@@ -1027,43 +1105,22 @@ class RelevantExperienceAnalyzer:
                 "company"
             ),
 
-            "job_title": role.get(
-                "job_title"
+            "job_title": (
+                role.get("job_title")
+                or role.get("title")
+                or role.get("role")
+                or role.get("position")
             ),
 
             "location": role.get(
                 "location"
             ),
 
-            "start": (
-                role.get("dates", {})
-                .get("start")
-                if isinstance(
-                    role.get("dates"),
-                    dict
-                )
-                else None
-            ),
+            "start": start,
 
-            "end": (
-                role.get("dates", {})
-                .get("end")
-                if isinstance(
-                    role.get("dates"),
-                    dict
-                )
-                else None
-            ),
+            "end": end,
 
-            "current": (
-                role.get("dates", {})
-                .get("current", False)
-                if isinstance(
-                    role.get("dates"),
-                    dict
-                )
-                else False
-            ),
+            "current": current,
 
             "duration_months": round(
                 duration_months,
@@ -1086,6 +1143,12 @@ class RelevantExperienceAnalyzer:
             ),
 
             "relevance_score": round(
+                relevance_score,
+                4
+            ),
+
+            # Backward-compatible alias
+            "relevance": round(
                 relevance_score,
                 4
             ),
@@ -1133,6 +1196,10 @@ class RelevantExperienceAnalyzer:
 
             experiences = []
 
+        # ========================================================
+        # REQUIRED YEARS
+        # ========================================================
+
         try:
 
             required_years = float(
@@ -1146,7 +1213,57 @@ class RelevantExperienceAnalyzer:
 
             required_years = 0.0
 
+        # ========================================================
+        # CENTRALIZED EXPERIENCE DETAILS
+        # ========================================================
+        #
+        # IMPORTANT:
+        # Date parsing and duration calculation happen here,
+        # inside the central experience matcher.
+        #
+        # This supports:
+        #     03/2025
+        #     03-2025
+        #     March 2025
+        #     Mar 2025
+        #     2025
+        #     Present
+        #     Current
+        #     Since 2022
+        #     etc.
+        #
+        # ========================================================
+
+        try:
+
+            experience_details = (
+                calculate_experience_details(
+                    experiences
+                )
+            )
+
+        except (
+            TypeError,
+            ValueError,
+            AttributeError
+        ):
+
+            experience_details = []
+
+        if not isinstance(
+            experience_details,
+            list
+        ):
+
+            experience_details = []
+
+        # ========================================================
+        # ANALYZE EACH ROLE
+        # ========================================================
+
         role_results = []
+
+        detail_index = 0
 
         for role in experiences:
 
@@ -1156,8 +1273,118 @@ class RelevantExperienceAnalyzer:
             ):
                 continue
 
+            # ----------------------------------------------------
+            # COPY ROLE
+            # ----------------------------------------------------
+
+            enriched_role = dict(role)
+
+            # Normalize title aliases once so all downstream
+            # scoring and response fields use the same title key.
+            enriched_role["job_title"] = (
+                role.get("job_title")
+                or role.get("title")
+                or role.get("role")
+                or role.get("position")
+                or ""
+            )
+
+            # ----------------------------------------------------
+            # FIND CENTRALIZED DETAIL
+            # ----------------------------------------------------
+
+            detail = None
+
+            if detail_index < len(
+                experience_details
+            ):
+
+                detail = (
+                    experience_details[
+                        detail_index
+                    ]
+                )
+
+            detail_index += 1
+
+            # ----------------------------------------------------
+            # ATTACH CENTRALIZED DURATION
+            # ----------------------------------------------------
+
+            if isinstance(
+                detail,
+                dict
+            ):
+
+                enriched_role[
+                    "start"
+                ] = detail.get(
+                    "start"
+                )
+
+                enriched_role[
+                    "end"
+                ] = detail.get(
+                    "end"
+                )
+
+                enriched_role[
+                    "current"
+                ] = detail.get(
+                    "current",
+                    False
+                )
+
+                # Prefer the central matcher's calculated duration.
+                # If this input is already normalized by the central
+                # matcher, preserve its duration instead of replacing
+                # it with zero during a second pass.
+                detail_months = detail.get("duration_months")
+                detail_years = detail.get("duration_years")
+
+                try:
+                    detail_months = float(detail_months or 0.0)
+                except (TypeError, ValueError):
+                    detail_months = 0.0
+
+                try:
+                    detail_years = float(detail_years or 0.0)
+                except (TypeError, ValueError):
+                    detail_years = 0.0
+
+                if detail_months <= 0.0:
+                    try:
+                        detail_months = float(
+                            role.get("duration_months") or 0.0
+                        )
+                    except (TypeError, ValueError):
+                        detail_months = 0.0
+
+                if detail_years <= 0.0:
+                    try:
+                        detail_years = float(
+                            role.get("duration_years")
+                            or role.get("years")
+                            or 0.0
+                        )
+                    except (TypeError, ValueError):
+                        detail_years = 0.0
+
+                if detail_months <= 0.0 and detail_years > 0.0:
+                    detail_months = detail_years * 12.0
+
+                if detail_years <= 0.0 and detail_months > 0.0:
+                    detail_years = detail_months / 12.0
+
+                enriched_role["duration_months"] = detail_months
+                enriched_role["duration_years"] = detail_years
+
+            # ----------------------------------------------------
+            # ANALYZE ROLE
+            # ----------------------------------------------------
+
             role_result = self.analyze_role(
-                role=role,
+                role=enriched_role,
                 target_title=job_title,
                 required_skills=required_skills,
                 resume=resume
@@ -1175,12 +1402,23 @@ class RelevantExperienceAnalyzer:
 
         for role_result in role_results:
 
-            total_experience_years += (
-                role_result.get(
-                    "duration_years",
-                    0.0
+            try:
+
+                duration = float(
+                    role_result.get(
+                        "duration_years",
+                        0.0
+                    )
                 )
-            )
+
+            except (
+                TypeError,
+                ValueError
+            ):
+
+                duration = 0.0
+
+            total_experience_years += duration
 
         # ========================================================
         # TOTAL RELEVANT EXPERIENCE
@@ -1190,26 +1428,37 @@ class RelevantExperienceAnalyzer:
 
         for role_result in role_results:
 
-            relevant_experience_years += (
-                role_result.get(
-                    "relevant_years",
-                    0.0
+            try:
+
+                relevant_years = float(
+                    role_result.get(
+                        "relevant_years",
+                        0.0
+                    )
                 )
+
+            except (
+                TypeError,
+                ValueError
+            ):
+
+                relevant_years = 0.0
+
+            relevant_experience_years += (
+                relevant_years
             )
 
         # ========================================================
         # LIMIT RELEVANT EXPERIENCE
         # ========================================================
 
-        # Relevant experience cannot exceed the candidate's
-        # documented total employment experience.
         relevant_experience_years = min(
             relevant_experience_years,
             total_experience_years
         )
 
         # ========================================================
-        # REQUIRED EXPERIENCE SCORE
+        # RELEVANCE SCORE
         # ========================================================
 
         if required_years <= 0:
@@ -1233,7 +1482,7 @@ class RelevantExperienceAnalyzer:
             )
 
         # ========================================================
-        # OVERALL STATUS
+        # OVERALL RELEVANCE STATUS
         # ========================================================
 
         if experience_score >= self.HIGH_THRESHOLD:
@@ -1253,7 +1502,91 @@ class RelevantExperienceAnalyzer:
             overall_status = "low"
 
         # ========================================================
-        # RETURN FINAL RESULT
+        # EXPERIENCE STATUS
+        # ========================================================
+
+        if required_years <= 0:
+
+            experience_status = "not_required"
+
+        elif total_experience_years >= required_years:
+
+            experience_status = "matched"
+
+        elif total_experience_years > 0:
+
+            experience_status = "partial"
+
+        else:
+
+            experience_status = "missing"
+
+        # ========================================================
+        # EXPERIENCE REQUIREMENT RATIO
+        # ========================================================
+
+        if required_years <= 0:
+
+            experience_requirement_ratio = 1.0
+
+        else:
+
+            experience_requirement_ratio = (
+                total_experience_years
+                /
+                required_years
+            )
+
+            experience_requirement_ratio = max(
+                0.0,
+                min(
+                    1.0,
+                    experience_requirement_ratio
+                )
+            )
+
+        # ========================================================
+        # RELEVANT EXPERIENCE RATIO
+        # ========================================================
+
+        if required_years <= 0:
+
+            relevant_experience_ratio = 1.0
+
+        else:
+
+            relevant_experience_ratio = (
+                relevant_experience_years
+                /
+                required_years
+            )
+
+            relevant_experience_ratio = max(
+                0.0,
+                min(
+                    1.0,
+                    relevant_experience_ratio
+                )
+            )
+
+        # ========================================================
+        # RELEVANT ROLES
+        # ========================================================
+
+        relevant_roles = [
+            role
+            for role in role_results
+            if (
+                role.get(
+                    "relevant_years",
+                    0.0
+                )
+                > 0.0
+            )
+        ]
+
+        # ========================================================
+        # FINAL RESULT
         # ========================================================
 
         return {
@@ -1273,6 +1606,35 @@ class RelevantExperienceAnalyzer:
                 relevant_experience_years,
                 2
             ),
+
+            "experience_status": (
+                experience_status
+            ),
+
+            "experience_requirement_ratio": round(
+                experience_requirement_ratio,
+                4
+            ),
+
+            "relevant_experience_ratio": round(
+                relevant_experience_ratio,
+                4
+            ),
+
+            "relevant_roles": relevant_roles,
+
+            "relevance_status": (
+                overall_status
+            ),
+
+            "relevance_score": round(
+                experience_score,
+                4
+            ),
+
+            # ----------------------------------------------------
+            # Backward-compatible fields
+            # ----------------------------------------------------
 
             "experience_score": round(
                 experience_score,

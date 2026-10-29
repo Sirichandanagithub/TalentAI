@@ -3,6 +3,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Integer,
+    JSON,
     String,
     Text,
 )
@@ -37,6 +38,11 @@ class Resume(Base):
         Text,
         nullable=True,
     )
+
+    parsed_data = Column(
+        JSON,
+        nullable=True,
+    )   
 
     uploaded_at = Column(
         DateTime(timezone=True),

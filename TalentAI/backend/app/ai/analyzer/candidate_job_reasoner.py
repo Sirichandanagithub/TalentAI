@@ -1,25 +1,13 @@
-from typing import Dict, List
+from typing import Any, Dict, List, Optional
 
 
 class CandidateJobReasoner:
     """
-    Reason about the overall alignment between a candidate and a job.
-
-    This layer does NOT perform matching itself.
-
-    It consumes results produced by:
-        - RequirementReasoner
-        - ExperienceMatcher
-        - SkillExperienceMatcher
-        - EducationMatcher
-        - ProjectRelevanceAnalyzer
-        - EvidenceEngine
-
-    Its responsibility is to combine those signals into
-    candidate-job level reasoning.
+    Combine deterministic candidate/job matching results into a
+    high-level explanation. This class does not perform skill matching.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.weights = {
             "skills": 0.35,
             "experience": 0.20,
@@ -29,696 +17,318 @@ class CandidateJobReasoner:
             "evidence": 0.05,
         }
 
-    # =========================================================
-    # Utility methods
-    # =========================================================
+    # ------------------------------------------------------------------
+    # Utilities
+    # ------------------------------------------------------------------
 
     @staticmethod
-    def _safe_float(
-        value,
-        default: float = 0.0
-    ) -> float:
-        """
-        Safely convert a value to float.
-        """
+    def _safe_float(value: Any, default: float = 0.0) -> float:
         try:
-            if value is None:
+            if value is None or isinstance(value, bool):
                 return default
-
             return float(value)
-
         except (TypeError, ValueError):
             return default
 
     @staticmethod
-    def _clamp(
-        value: float
-    ) -> float:
-        """
-        Keep score between 0 and 1.
-        """
-        return max(
-            0.0,
-            min(1.0, value)
-        )
+    def _clamp(value: float) -> float:
+        return max(0.0, min(1.0, value))
 
     @staticmethod
-    def _safe_list(
-        value
-    ) -> List:
+    def _safe_dict(value: Any) -> Dict:
+        return value if isinstance(value, dict) else {}
+
+    @staticmethod
+    def _safe_list(value: Any) -> List:
+        return value if isinstance(value, list) else []
+
+    @staticmethod
+    def _first_dict(source: Dict, *keys: str) -> Dict:
+        """Return the first dict-valued field found in source."""
+        for key in keys:
+            value = source.get(key)
+            if isinstance(value, dict):
+                return value
+        return {}
+
+    # ------------------------------------------------------------------
+    # Skills
+    # ------------------------------------------------------------------
+
+    def _get_skill_results(self, match_result: Dict) -> List[Dict]:
         """
-        Safely return a list.
+        Support both:
+          {"skills": {"required": {...}}}
+        and the actual API response shape:
+          {"match": {"skills": {"required": {...}}}}
         """
-        return (
-            value
-            if isinstance(value, list)
-            else []
-        )
+        root = self._safe_dict(match_result)
+        match = self._safe_dict(root.get("match"))
+        skills = self._first_dict(root, "skills")
+        if not skills:
+            skills = self._safe_dict(match.get("skills"))
 
-    # =========================================================
-    # Requirement analysis
-    # =========================================================
+        required = self._safe_dict(skills.get("required"))
+        results: List[Dict] = []
 
-    def _get_skill_results(
-        self,
-        match_result: Dict,
-    ) -> List[Dict]:
-        """
-        Extract required-skill results from the structure
-        produced by TalentMatchEngine.
-
-        Expected structure:
-
-        match_result = {
-            "skills": {
-                "required": {
-                    "matched": [...],
-                    "possible": [...],
-                    "unknown": [...]
-                }
-            }
-        }
-
-        The three lists are converted into one unified list
-        so the candidate-job reasoner can calculate:
-            - matched count
-            - possible count
-            - unknown count
-            - total count
-        """
-
-        if not isinstance(
-            match_result,
-            dict
-        ):
-            return []
-
-        skills = match_result.get(
-            "skills",
-            {}
-        )
-
-        if not isinstance(
-            skills,
-            dict
-        ):
-            return []
-
-        required = skills.get(
-            "required",
-            {}
-        )
-
-        if not isinstance(
-            required,
-            dict
-        ):
-            return []
-
-        results = []
-
-        # -----------------------------------------------------
-        # Matched skills
-        # -----------------------------------------------------
-
-        matched_skills = required.get(
-            "matched",
-            []
-        )
-
-        if isinstance(
-            matched_skills,
-            list
-        ):
-            for item in matched_skills:
-
-                if isinstance(
-                    item,
-                    dict
-                ):
+        for status in ("matched", "possible", "unknown"):
+            items = self._safe_list(required.get(status))
+            for item in items:
+                if isinstance(item, dict):
                     result = dict(item)
-
-                    # Ensure status exists.
-                    result.setdefault(
-                        "status",
-                        "matched"
-                    )
-
-                    # Ensure confidence exists.
-                    result.setdefault(
-                        "confidence",
-                        1.0
-                    )
-
-                    results.append(result)
-
+                    result.setdefault("status", status)
+                    default_confidence = {
+                        "matched": 1.0,
+                        "possible": 0.5,
+                        "unknown": 0.0,
+                    }[status]
+                    result.setdefault("confidence", default_confidence)
                 else:
-                    results.append({
+                    result = {
                         "requirement": item,
-                        "status": "matched",
-                        "confidence": 1.0,
-                    })
+                        "status": status,
+                        "confidence": {
+                            "matched": 1.0,
+                            "possible": 0.5,
+                            "unknown": 0.0,
+                        }[status],
+                    }
+                results.append(result)
 
-        # -----------------------------------------------------
-        # Possible skills
-        # -----------------------------------------------------
-
-        possible_skills = required.get(
-            "possible",
-            []
-        )
-
-        if isinstance(
-            possible_skills,
-            list
-        ):
-            for item in possible_skills:
-
-                if isinstance(
-                    item,
-                    dict
-                ):
-                    result = dict(item)
-
-                    result.setdefault(
-                        "status",
-                        "possible"
-                    )
-
-                    result.setdefault(
-                        "confidence",
-                        0.5
-                    )
-
-                    results.append(result)
-
-                else:
-                    results.append({
-                        "requirement": item,
-                        "status": "possible",
-                        "confidence": 0.5,
-                    })
-
-        # -----------------------------------------------------
-        # Unknown / missing skills
-        # -----------------------------------------------------
-
-        unknown_skills = required.get(
-            "unknown",
-            []
-        )
-
-        if isinstance(
-            unknown_skills,
-            list
-        ):
-            for item in unknown_skills:
-
-                if isinstance(
-                    item,
-                    dict
-                ):
-                    result = dict(item)
-
-                    result.setdefault(
-                        "status",
-                        "unknown"
-                    )
-
-                    result.setdefault(
-                        "confidence",
-                        0.0
-                    )
-
-                    results.append(result)
-
-                else:
-                    results.append({
-                        "requirement": item,
-                        "status": "unknown",
-                        "confidence": 0.0,
-                    })
-
+        # Defensive fallback for older/high-level reasoner payloads
+        # containing counts but no individual skill lists.
+        if not results:
+            reasoning = self._safe_dict(root.get("candidate_job_reasoning"))
+            alignment = self._safe_dict(reasoning.get("skill_alignment"))
+            if not alignment:
+                alignment = self._safe_dict(root.get("skill_alignment"))
+            for status in ("matched", "possible", "unknown"):
+                count = max(0, int(self._safe_float(alignment.get(status), 0)))
+                for _ in range(count):
+                    results.append({"status": status, "confidence": {
+                        "matched": 1.0, "possible": 0.5, "unknown": 0.0
+                    }[status]})
         return results
 
-    def _calculate_skill_alignment(
-        self,
-        match_result: Dict,
-    ) -> Dict:
-        """
-        Calculate overall required-skill alignment.
-
-        Uses the final status produced by the
-        requirement matching/reasoning layer.
-        """
-
-        results = self._get_skill_results(
-            match_result
-        )
-
+    def _calculate_skill_alignment(self, match_result: Dict) -> Dict:
+        results = self._get_skill_results(match_result)
         if not results:
-            return {
-                "score": 0.0,
-                "matched": 0,
-                "possible": 0,
-                "unknown": 0,
-                "total": 0,
-            }
+            return {"score": 0.0, "matched": 0, "possible": 0,
+                    "unknown": 0, "total": 0}
 
-        matched = 0
-        possible = 0
-        unknown = 0
-
-        confidence_values = []
-
+        counts = {"matched": 0, "possible": 0, "unknown": 0}
+        confidences = []
         for result in results:
-
-            status = str(
-                result.get(
-                    "status",
-                    "unknown"
-                )
-            ).lower()
-
-            if status == "matched":
-                matched += 1
-
-            elif status == "possible":
-                possible += 1
-
-            else:
-                unknown += 1
-
-            confidence = self._safe_float(
-                result.get(
-                    "confidence"
-                )
-            )
-
-            confidence_values.append(
-                self._clamp(
-                    confidence
-                )
-            )
+            status = str(result.get("status", "unknown")).lower()
+            if status not in counts:
+                status = "unknown"
+            counts[status] += 1
+            confidences.append(self._clamp(
+                self._safe_float(result.get("confidence"), {
+                    "matched": 1.0, "possible": 0.5, "unknown": 0.0
+                }[status])
+            ))
 
         total = len(results)
-
-        # -----------------------------------------------------
-        # Status-based coverage
-        # -----------------------------------------------------
-
-        status_score = (
-            matched
-            + (possible * 0.50)
-        ) / total
-
-        # -----------------------------------------------------
-        # Confidence-based support
-        # -----------------------------------------------------
-
-        confidence_score = (
-            sum(confidence_values) / total
-            if confidence_values
-            else 0.0
-        )
-
-        # -----------------------------------------------------
-        # Combined skill score
-        # -----------------------------------------------------
-
-        score = (
-            status_score * 0.60
-            + confidence_score * 0.40
-        )
-
+        status_score = (counts["matched"] + 0.5 * counts["possible"]) / total
+        confidence_score = sum(confidences) / total if confidences else 0.0
+        score = 0.60 * status_score + 0.40 * confidence_score
         return {
-            "score": round(
-                self._clamp(score),
-                4
-            ),
-            "matched": matched,
-            "possible": possible,
-            "unknown": unknown,
+            "score": round(self._clamp(score), 4),
+            "matched": counts["matched"],
+            "possible": counts["possible"],
+            "unknown": counts["unknown"],
             "total": total,
         }
 
-    # =========================================================
-    # Experience analysis
-    # =========================================================
+    # ------------------------------------------------------------------
+    # Experience
+    # ------------------------------------------------------------------
 
-    def _calculate_experience_alignment(
-        self,
-        match_result: Dict,
-    ) -> Dict:
-        """
-        Calculate alignment with required total experience.
-        """
+    def _calculate_experience_alignment(self, match_result: Dict) -> Dict:
+        root = self._safe_dict(match_result)
+        reasoning = self._safe_dict(root.get("candidate_job_reasoning"))
+        experience = self._first_dict(root, "experience")
+        if not experience:
+            experience = self._safe_dict(reasoning.get("experience_alignment"))
 
-        experience = match_result.get(
-            "experience",
-            {}
+        candidate_years_raw = experience.get("candidate_years")
+        required_years_raw = experience.get("required_years")
+        candidate_years = (
+            self._safe_float(candidate_years_raw)
+            if candidate_years_raw is not None else None
         )
-
-        if not isinstance(
-            experience,
-            dict
-        ):
-            experience = {}
-
-        candidate_years = experience.get(
-            "candidate_years"
+        required_years = (
+            self._safe_float(required_years_raw)
+            if required_years_raw is not None else None
         )
+        status = str(experience.get("status", "unknown")).lower()
 
-        required_years = experience.get(
-            "required_years"
-        )
-
-        status = experience.get(
-            "status",
-            "unknown"
-        )
-
-        candidate_years_value = (
-            self._safe_float(
-                candidate_years
-            )
-            if candidate_years is not None
-            else None
-        )
-
-        required_years_value = (
-            self._safe_float(
-                required_years
-            )
-            if required_years is not None
-            else None
-        )
-
-        if (
-            candidate_years_value is None
-            or required_years_value is None
-            or required_years_value <= 0
-        ):
+        if candidate_years is None or required_years is None:
             return {
-                "score": 0.0,
-                "candidate_years": candidate_years_value,
-                "required_years": required_years_value,
+                "score": self._clamp(self._safe_float(experience.get("score"))),
+                "candidate_years": candidate_years,
+                "required_years": required_years,
                 "status": status,
             }
 
-        ratio = (
-            candidate_years_value
-            / required_years_value
-        )
-
-        score = self._clamp(
-            ratio
-        )
-
+        if required_years <= 0:
+            score = 1.0
+        else:
+            score = self._clamp(candidate_years / required_years)
         return {
-            "score": round(
-                score,
-                4
-            ),
-            "candidate_years": candidate_years_value,
-            "required_years": required_years_value,
+            "score": round(score, 4),
+            "candidate_years": candidate_years,
+            "required_years": required_years,
             "status": status,
         }
 
-    # =========================================================
-    # Relevant experience
-    # =========================================================
+    def _calculate_relevant_experience_alignment(self, match_result: Dict) -> Dict:
+        root = self._safe_dict(match_result)
+        reasoning = self._safe_dict(root.get("candidate_job_reasoning"))
+        relevant = self._first_dict(root, "relevant_experience")
+        if not relevant:
+            relevant = self._safe_dict(reasoning.get("relevant_experience"))
 
-    def _calculate_relevant_experience_alignment(
-        self,
-        match_result: Dict,
-    ) -> Dict:
-        """
-        Calculate alignment based on experience that is
-        specifically relevant to the target job.
-        """
-
-        relevant_experience = match_result.get(
-            "relevant_experience",
-            {}
-        )
-
-        if not isinstance(
-            relevant_experience,
-            dict
-        ):
-            relevant_experience = {}
-
-        relevant_years = self._safe_float(
-            relevant_experience.get(
-                "relevant_years"
-            )
-        )
-
-        required_years = self._safe_float(
-            relevant_experience.get(
-                "required_years"
-            )
-        )
-
-        if required_years <= 0:
-            score = 0.0
-
+        relevant_years = self._safe_float(relevant.get("relevant_years"))
+        required_raw = relevant.get("required_years")
+        required_years = self._safe_float(required_raw) if required_raw is not None else None
+        if required_years is None:
+            score = self._clamp(self._safe_float(relevant.get("score")))
+        elif required_years <= 0:
+            score = 1.0
         else:
-            score = self._clamp(
-                relevant_years
-                / required_years
-            )
+            score = self._clamp(relevant_years / required_years)
 
         return {
-            "score": round(
-                score,
-                4
-            ),
+            "score": round(score, 4),
             "relevant_years": relevant_years,
-            "required_years": (
-                required_years
-                if required_years > 0
-                else None
-            ),
+            "required_years": required_years if required_years is None or required_years > 0 else None,
         }
 
-    # =========================================================
-    # Project analysis
-    # =========================================================
+    # ------------------------------------------------------------------
+    # Projects
+    # ------------------------------------------------------------------
 
     def _calculate_project_alignment(
         self,
         job_title: str,
         match_result: Dict,
-        context: Dict | None = None,
-        evidence: Dict | None = None,
+        context: Optional[Dict] = None,
+        evidence: Optional[Dict] = None,
     ) -> Dict:
-        """
-        Calculate project alignment from project relevance.
+        root = self._safe_dict(match_result)
+        reasoning = self._safe_dict(root.get("candidate_job_reasoning"))
+        project = self._first_dict(root, "project_relevance", "projects")
+        if not project:
+            project = self._safe_dict(reasoning.get("project_alignment"))
 
-        The preferred input contains a top-level ``status``.
-        For backward compatibility, if that key is missing,
-        derive the status from the most relevant project.
-        """
+        score_raw = project.get("overall_project_relevance")
+        if score_raw is None:
+            score_raw = project.get("score", 0.0)
+        score = self._clamp(self._safe_float(score_raw))
+        count = project.get("project_count", 0)
+        try:
+            count = max(0, int(count))
+        except (TypeError, ValueError):
+            count = 0
 
-        project_relevance = match_result.get(
-            "project_relevance",
-            {}
-        )
-
-        if not isinstance(
-            project_relevance,
-            dict
-        ):
-            project_relevance = {}
-
-        score = self._safe_float(
-            project_relevance.get(
-                "overall_project_relevance"
-            )
-        )
-
-        project_count = project_relevance.get(
-            "project_count",
-            0
-        )
-
-        status = project_relevance.get(
-            "status"
-        )
-
-        # -----------------------------------------------------
-        # Backward compatibility
-        # -----------------------------------------------------
-        # Older ProjectRelevanceAnalyzer results stored the
-        # status only inside relevant_projects[].
-        # -----------------------------------------------------
-
+        status = project.get("status")
         if not status:
-
-            relevant_projects = project_relevance.get(
-                "relevant_projects",
-                []
-            )
-
-            if isinstance(
-                relevant_projects,
-                list
-            ):
-
-                valid_projects = [
-                    project
-                    for project in relevant_projects
-                    if isinstance(project, dict)
-                ]
-
-                if valid_projects:
-
-                    best_project = max(
-                        valid_projects,
-                        key=lambda project: self._safe_float(
-                            project.get(
-                                "relevance_score",
-                                0.0
-                            )
-                        )
-                    )
-
-                    status = best_project.get(
-                        "status",
-                        "unknown"
-                    )
-
+            projects = self._safe_list(project.get("relevant_projects"))
+            valid_projects = [p for p in projects if isinstance(p, dict)]
+            if valid_projects:
+                best = max(
+                    valid_projects,
+                    key=lambda p: self._safe_float(p.get("relevance_score")),
+                )
+                status = best.get("status", best.get("relevance_level"))
         if not status:
             status = "unknown"
 
-        return {
-            "score": round(
-                self._clamp(score),
-                4
-            ),
-            "project_count": project_count,
-            "status": str(status).lower(),
-        }
+        return {"score": round(score, 4), "project_count": count,
+                "status": str(status).lower()}
 
-    # =========================================================
-    # Education analysis
-    # =========================================================
+    # ------------------------------------------------------------------
+    # Education
+    # ------------------------------------------------------------------
 
-    def _calculate_education_alignment(
-        self,
-        match_result: Dict,
-    ) -> Dict:
-        """
-        Calculate education alignment from the existing
-        education matcher result.
-        """
+    def _calculate_education_alignment(self, match_result: Dict) -> Dict:
+        root = self._safe_dict(match_result)
+        reasoning = self._safe_dict(root.get("candidate_job_reasoning"))
+        education = self._first_dict(root, "education")
+        if not education:
+            education = self._safe_dict(reasoning.get("education_alignment"))
 
-        education = match_result.get(
-            "education",
-            {}
-        )
-
-        if not isinstance(
-            education,
-            dict
-        ):
-            education = {}
-
-        status = str(
-            education.get(
-                "status",
-                "unknown"
-            )
-        ).lower()
-
+        status = str(education.get("status", "unknown")).lower()
         if status == "matched":
             score = 1.0
-
-        elif status == "partial":
+        elif status in ("partial", "possible"):
             score = 0.5
-
-        elif status == "possible":
-            score = 0.5
-
+        elif status in ("not_required", "not required", "waived"):
+            # A non-required criterion should not penalize the candidate.
+            score = 1.0
         else:
-            score = 0.0
+            score = self._clamp(self._safe_float(education.get("score")))
+        return {"score": round(score, 4), "status": status}
 
-        return {
-            "score": score,
-            "status": status,
-        }
+    # ------------------------------------------------------------------
+    # Evidence
+    # ------------------------------------------------------------------
 
-    # =========================================================
-    # Evidence analysis
-    # =========================================================
+    
+    def _calculate_evidence_alignment(self, evidence: Dict) -> Dict:
+        """Calculate evidence strength across all requirements."""
+        evidence = self._safe_dict(evidence)
 
-    def _calculate_evidence_alignment(
-        self,
-        evidence: Dict,
-    ) -> Dict:
-        """
-        Calculate overall evidence strength across
-        required skills.
-
-        Evidence is passed separately by TalentMatchEngine
-        because it is available at the top-level result.
-        """
-
-        if not isinstance(
-            evidence,
-            dict
-        ):
-            evidence = {}
-
-        values = []
-
-        for requirement, result in evidence.items():
-
-            if not isinstance(
-                result,
-                dict
-            ):
-                continue
-
-            strength = self._safe_float(
-                result.get(
-                    "evidence_strength"
-                )
-            )
-
-            values.append(
-                self._clamp(
-                    strength
-                )
-            )
-
-        if not values:
+        if not evidence:
             return {
                 "score": 0.0,
                 "requirements_with_evidence": 0,
+                "total_requirements": 0,
             }
 
+        total_requirements = 0
+        requirements_with_evidence = 0
+        total_strength = 0.0
+
+        for result in evidence.values():
+            if not isinstance(result, dict):
+                continue
+
+            total_requirements += 1
+
+            strength = self._clamp(
+                self._safe_float(result.get("evidence_strength"))
+            )
+
+            items = result.get("evidence", [])
+            has_evidence = (
+                isinstance(items, (list, tuple)) and len(items) > 0
+            )
+
+            if has_evidence and strength > 0:
+                requirements_with_evidence += 1
+                total_strength += strength
+
         score = (
-            sum(values)
-            / len(values)
+            total_strength / total_requirements
+            if total_requirements > 0
+            else 0.0
         )
 
         return {
-            "score": round(
-                self._clamp(score),
-                4
-            ),
-            "requirements_with_evidence": len(
-                values
-            ),
+            "score": round(self._clamp(score), 4),
+            "requirements_with_evidence": requirements_with_evidence,
+            "total_requirements": total_requirements,
         }
 
-    # =========================================================
-    # Strengths
-    # =========================================================
 
+    # ------------------------------------------------------------------
+    # Strengths, gaps, overall score and explanation
+    # ------------------------------------------------------------------
+
+    
     def _build_strengths(
         self,
         skill_alignment: Dict,
@@ -727,123 +337,97 @@ class CandidateJobReasoner:
         project_alignment: Dict,
         evidence_alignment: Dict,
     ) -> List[str]:
-
+        """Build strengths using only applicable criteria."""
         strengths = []
 
-        if skill_alignment["matched"] > 0:
+        if self._safe_float(skill_alignment.get("matched")) > 0:
             strengths.append(
-                f"{skill_alignment['matched']} required "
-                "skill(s) are directly matched."
+                f'{skill_alignment["matched"]} required skill(s) are directly matched.'
             )
 
-        if (
-            experience_alignment["score"]
-            >= 0.80
-        ):
-            strengths.append(
-                "The candidate has substantial "
-                "overall experience relative to "
-                "the job requirement."
-            )
+        # Overall experience: only report a strength when required.
+        experience_status = str(
+            experience_alignment.get("status", "")
+        ).strip().lower()
+        required_years = experience_alignment.get("required_years")
 
         if (
-            relevant_experience["score"]
-            >= 0.70
+            experience_status not in {
+                "not_required",
+                "not required",
+                "not applicable",
+                "not_applicable",
+                "n/a",
+            }
+            and required_years is not None
+            and self._safe_float(required_years) > 0
+            and self._safe_float(experience_alignment.get("score")) >= 0.80
         ):
             strengths.append(
-                "The candidate has strong relevant "
-                "experience for the target role."
+                "The candidate has substantial overall experience relative to the job requirement."
             )
 
-        if (
-            project_alignment["score"]
-            >= 0.70
-        ):
-            strengths.append(
-                "Projects show strong alignment with "
-                "the job requirements."
-            )
+        # Relevant experience: only report a strength when required.
+        relevant_status = str(
+            relevant_experience.get("status", "")
+        ).strip().lower()
+        relevant_required_years = relevant_experience.get("required_years")
 
         if (
-            evidence_alignment["score"]
-            >= 0.70
+            relevant_status not in {
+                "not_required",
+                "not required",
+                "not applicable",
+                "not_applicable",
+                "n/a",
+            }
+            and relevant_required_years is not None
+            and self._safe_float(relevant_required_years) > 0
+            and self._safe_float(relevant_experience.get("score")) >= 0.70
         ):
             strengths.append(
-                "The resume contains strong evidence "
-                "supporting the required skills."
+                "The candidate has strong relevant experience for the target role."
+            )
+
+        if self._safe_float(project_alignment.get("score")) >= 0.70:
+            strengths.append(
+                "Projects show strong alignment with the job requirements."
+            )
+
+        if self._safe_float(evidence_alignment.get("score")) >= 0.70:
+            strengths.append(
+                "The resume contains strong evidence supporting the required skills."
             )
 
         return strengths
 
-    # =========================================================
-    # Gaps
-    # =========================================================
 
     def _build_gaps(
-        self,
-        skill_alignment: Dict,
-        experience_alignment: Dict,
-        relevant_experience: Dict,
-        project_alignment: Dict,
+        self, skill_alignment: Dict, experience_alignment: Dict,
+        relevant_experience: Dict, project_alignment: Dict,
         education_alignment: Dict,
     ) -> List[str]:
-
         gaps = []
-
         if skill_alignment["unknown"] > 0:
-            gaps.append(
-                f"{skill_alignment['unknown']} required "
-                "skill(s) lack sufficient evidence."
-            )
+            gaps.append(f'{skill_alignment["unknown"]} required skill(s) lack sufficient evidence.')
 
-        if (
-            experience_alignment["required_years"]
-            is not None
-            and experience_alignment["candidate_years"]
-            is not None
-            and experience_alignment["candidate_years"]
-            < experience_alignment["required_years"]
-        ):
-            gaps.append(
-                "The candidate's documented overall "
-                "experience is below the required "
-                "experience."
-            )
+        candidate_years = experience_alignment["candidate_years"]
+        required_years = experience_alignment["required_years"]
+        if candidate_years is not None and required_years is not None and candidate_years < required_years:
+            gaps.append("The candidate's documented overall experience is below the required experience.")
 
-        if (
-            relevant_experience["required_years"]
-            is not None
-            and relevant_experience["relevant_years"]
-            < relevant_experience["required_years"]
-        ):
-            gaps.append(
-                "Relevant experience is below the "
-                "target requirement."
-            )
+        relevant_years = relevant_experience["relevant_years"]
+        relevant_required = relevant_experience["required_years"]
+        if relevant_required is not None and relevant_years < relevant_required:
+            gaps.append("Relevant experience is below the target requirement.")
 
-        if (
-            project_alignment["project_count"]
-            == 0
-        ):
-            gaps.append(
-                "No relevant projects were identified."
-            )
-
-        if (
-            education_alignment["status"]
-            == "unknown"
-        ):
-            gaps.append(
-                "Education alignment could not be "
-                "reliably determined."
-            )
-
+        if project_alignment["project_count"] == 0:
+            gaps.append("No relevant projects were identified.")
+        if education_alignment["status"] == "unknown":
+            gaps.append("Education alignment could not be reliably determined.")
         return gaps
 
-    # =========================================================
-    # Overall score
-    # =========================================================
-
+    
     def _calculate_overall_score(
         self,
         skill_alignment: Dict,
@@ -853,258 +437,136 @@ class CandidateJobReasoner:
         education_alignment: Dict,
         evidence_alignment: Dict,
     ) -> float:
+        """Calculate a weighted score using applicable criteria."""
 
-        score = (
-            skill_alignment["score"]
-            * self.weights["skills"]
+        components = [
+            ("skills", skill_alignment),
+            ("experience", experience_alignment),
+            ("relevant_experience", relevant_experience),
+            ("projects", project_alignment),
+            ("education", education_alignment),
+            ("evidence", evidence_alignment),
+        ]
 
-            + experience_alignment["score"]
-            * self.weights["experience"]
+        non_applicable_statuses = {
+            "not_required",
+            "not applicable",
+            "not_applicable",
+            "n/a",
+        }
 
-            + relevant_experience["score"]
-            * self.weights["relevant_experience"]
+        weighted_total = 0.0
+        applicable_weight = 0.0
 
-            + project_alignment["score"]
-            * self.weights["projects"]
+        for name, alignment in components:
+            alignment = self._safe_dict(alignment)
+            status = str(alignment.get("status", "")).strip().lower()
 
-            + education_alignment["score"]
-            * self.weights["education"]
+            if status in non_applicable_statuses:
+                continue
 
-            + evidence_alignment["score"]
-            * self.weights["evidence"]
-        )
+            if name == "evidence":
+                if self._safe_float(alignment.get("total_requirements")) <= 0:
+                    continue
+
+            if name == "skills":
+                if self._safe_float(alignment.get("total")) <= 0:
+                    continue
+
+            if name == "relevant_experience":
+                if self._safe_float(alignment.get("required_years")) <= 0:
+                    continue
+
+            weight = self._safe_float(self.weights.get(name))
+            if weight <= 0:
+                continue
+
+            component_score = self._clamp(
+                self._safe_float(alignment.get("score"))
+            )
+
+            weighted_total += component_score * weight
+            applicable_weight += weight
+
+        if applicable_weight <= 0:
+            return 0.0
 
         return round(
-            self._clamp(score),
-            4
+            self._clamp(weighted_total / applicable_weight),
+            4,
         )
 
-    # =========================================================
-    # Status
-    # =========================================================
 
-    def _determine_status(
-        self,
-        overall_score: float,
-    ) -> str:
 
+    def _determine_status(self, overall_score: float) -> str:
         if overall_score >= 0.75:
             return "strong"
-
         if overall_score >= 0.50:
             return "moderate"
-
         return "weak"
 
-    # =========================================================
-    # Reason
-    # =========================================================
-
     def _build_reason(
-        self,
-        status: str,
-        skill_alignment: Dict,
-        experience_alignment: Dict,
-        relevant_experience: Dict,
+        self, status: str, skill_alignment: Dict,
+        experience_alignment: Dict, relevant_experience: Dict,
         project_alignment: Dict,
     ) -> str:
-
-        parts = []
-
-        parts.append(
-            f"The candidate has "
-            f"{skill_alignment['matched']} "
-            f"of "
-            f"{skill_alignment['total']} "
-            "required skills directly matched."
-        )
-
-        if (
-            experience_alignment["candidate_years"]
-            is not None
-        ):
-            parts.append(
-                f"Documented overall experience is "
-                f"{experience_alignment['candidate_years']:.2f} "
-                "years."
-            )
-
-        if (
-            relevant_experience["relevant_years"]
-            > 0
-        ):
-            parts.append(
-                f"Relevant experience is approximately "
-                f"{relevant_experience['relevant_years']:.2f} "
-                "years."
-            )
-
-        if (
-            project_alignment["project_count"]
-            > 0
-        ):
-            parts.append(
-                f"{project_alignment['project_count']} "
-                "relevant project(s) were identified."
-            )
-
+        parts = [
+            f'The candidate has {skill_alignment["matched"]} of '
+            f'{skill_alignment["total"]} required skills directly matched.'
+        ]
+        candidate_years = experience_alignment["candidate_years"]
+        if candidate_years is not None:
+            parts.append(f"Documented overall experience is {candidate_years:.2f} years.")
+        relevant_years = relevant_experience["relevant_years"]
+        if relevant_years > 0:
+            parts.append(f"Relevant experience is approximately {relevant_years:.2f} years.")
+        if project_alignment["project_count"] > 0:
+            parts.append(f'{project_alignment["project_count"]} relevant project(s) were identified.')
         return " ".join(parts)
 
-    # =========================================================
+    # ------------------------------------------------------------------
     # Public API
-    # =========================================================
+    # ------------------------------------------------------------------
 
     def reason(
         self,
         job_title: str,
         match_result: Dict,
-        context: Dict | None = None,
-        evidence: Dict | None = None,
+        context: Optional[Dict] = None,
+        evidence: Optional[Dict] = None,
     ) -> Dict:
+        """Build candidate-job reasoning from deterministic match results."""
+        root = self._safe_dict(match_result)
+        context = self._safe_dict(context)
+        evidence = self._safe_dict(evidence)
 
-        if not isinstance(
-            match_result,
-            dict
-        ):
-            match_result = {}
-
-        if not isinstance(
-            context,
-            dict
-        ):
-            context = {}
-
-        if not isinstance(
-            evidence,
-            dict
-        ):
-            evidence = {}
-
-        # -----------------------------------------------------
-        # Skill alignment
-        # -----------------------------------------------------
-
-        skill_alignment = (
-            self._calculate_skill_alignment(
-                match_result
-            )
+        # Accept either a full API response or the inner match-result object.
+        skill_alignment = self._calculate_skill_alignment(root)
+        experience_alignment = self._calculate_experience_alignment(root)
+        relevant_experience = self._calculate_relevant_experience_alignment(root)
+        project_alignment = self._calculate_project_alignment(
+            job_title, root, context=context, evidence=evidence
         )
+        education_alignment = self._calculate_education_alignment(root)
+        evidence_alignment = self._calculate_evidence_alignment(evidence)
 
-        # -----------------------------------------------------
-        # Experience alignment
-        # -----------------------------------------------------
-
-        experience_alignment = (
-            self._calculate_experience_alignment(
-                match_result
-            )
+        overall_score = self._calculate_overall_score(
+            skill_alignment, experience_alignment, relevant_experience,
+            project_alignment, education_alignment, evidence_alignment,
         )
-
-        # -----------------------------------------------------
-        # Relevant experience
-        # -----------------------------------------------------
-
-        relevant_experience = (
-            self._calculate_relevant_experience_alignment(
-                match_result
-            )
-        )
-
-        # -----------------------------------------------------
-        # Project alignment
-        # -----------------------------------------------------
-
-        project_alignment = (
-            self._calculate_project_alignment(
-                job_title=job_title,
-                match_result=match_result,
-                context=context,
-                evidence=evidence,
-            )
-        )
-
-        # -----------------------------------------------------
-        # Education alignment
-        # -----------------------------------------------------
-
-        education_alignment = (
-            self._calculate_education_alignment(
-                match_result
-            )
-        )
-
-        # -----------------------------------------------------
-        # Evidence alignment
-        # -----------------------------------------------------
-
-        evidence_alignment = (
-            self._calculate_evidence_alignment(
-                evidence
-            )
-        )
-
-        # -----------------------------------------------------
-        # Overall score
-        # -----------------------------------------------------
-
-        overall_score = (
-            self._calculate_overall_score(
-                skill_alignment,
-                experience_alignment,
-                relevant_experience,
-                project_alignment,
-                education_alignment,
-                evidence_alignment,
-            )
-        )
-
-        # -----------------------------------------------------
-        # Status
-        # -----------------------------------------------------
-
-        status = self._determine_status(
-            overall_score
-        )
-
-        # -----------------------------------------------------
-        # Strengths
-        # -----------------------------------------------------
-
+        status = self._determine_status(overall_score)
         strengths = self._build_strengths(
-            skill_alignment,
-            experience_alignment,
-            relevant_experience,
-            project_alignment,
-            evidence_alignment,
+            skill_alignment, experience_alignment, relevant_experience,
+            project_alignment, evidence_alignment,
         )
-
-        # -----------------------------------------------------
-        # Gaps
-        # -----------------------------------------------------
-
         gaps = self._build_gaps(
-            skill_alignment,
-            experience_alignment,
-            relevant_experience,
-            project_alignment,
-            education_alignment,
+            skill_alignment, experience_alignment, relevant_experience,
+            project_alignment, education_alignment,
         )
-
-        # -----------------------------------------------------
-        # Reason
-        # -----------------------------------------------------
-
         reason = self._build_reason(
-            status,
-            skill_alignment,
-            experience_alignment,
-            relevant_experience,
-            project_alignment,
+            status, skill_alignment, experience_alignment,
+            relevant_experience, project_alignment,
         )
-
-        # -----------------------------------------------------
-        # Final result
-        # -----------------------------------------------------
 
         return {
             "job_title": job_title,
@@ -1122,20 +584,14 @@ class CandidateJobReasoner:
         }
 
 
-# ============================================================
-# Convenience function
-# ============================================================
-
 def reason_candidate_job(
     job_title: str,
     match_result: Dict,
-    context: Dict | None = None,
-    evidence: Dict | None = None,
+    context: Optional[Dict] = None,
+    evidence: Optional[Dict] = None,
 ) -> Dict:
-
-    reasoner = CandidateJobReasoner()
-
-    return reasoner.reason(
+    """Convenience wrapper around CandidateJobReasoner.reason()."""
+    return CandidateJobReasoner().reason(
         job_title=job_title,
         match_result=match_result,
         context=context,

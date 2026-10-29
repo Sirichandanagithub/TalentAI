@@ -584,6 +584,10 @@ def match_education(
     required_education: List[str]
 ) -> Dict:
 
+    if isinstance(required_education, str):
+        required_education = [required_education]
+      
+
     if not required_education:
 
         return {

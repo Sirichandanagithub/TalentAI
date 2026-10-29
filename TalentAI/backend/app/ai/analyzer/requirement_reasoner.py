@@ -31,9 +31,7 @@ class RequirementReasoner:
     # ========================================================
 
     STRONG_CONFIDENCE = 0.85
-
     MATCHED_CONFIDENCE = 0.65
-
     POSSIBLE_CONFIDENCE = 0.40
 
     # ========================================================
@@ -41,9 +39,7 @@ class RequirementReasoner:
     # ========================================================
 
     EVIDENCE_WEIGHT = 0.35
-
     CONTEXT_WEIGHT = 0.30
-
     MATCH_WEIGHT = 0.35
 
     # ========================================================
@@ -102,32 +98,23 @@ class RequirementReasoner:
         are NOT considered direct.
         """
 
-        if not isinstance(
-            hybrid_result,
-            dict
-        ):
+        if not isinstance(hybrid_result, dict):
             return False
 
         relationship = self._normalize(
-            hybrid_result.get(
-                "relationship"
-            )
+            hybrid_result.get("relationship")
         )
 
         match_source = self._normalize(
-            hybrid_result.get(
-                "match_source"
-            )
+            hybrid_result.get("match_source")
         )
 
         status = self._normalize(
-            hybrid_result.get(
-                "status"
-            )
+            hybrid_result.get("status")
         )
 
         # ----------------------------------------------------
-        # Explicit relationship information
+        # Explicit indirect relationship
         # ----------------------------------------------------
 
         if relationship in self.INDIRECT_RELATIONSHIPS:
@@ -161,15 +148,13 @@ class RequirementReasoner:
             return True
 
         # ----------------------------------------------------
-        # Strong semantic match without relationship
+        # Strong semantic match without indirect relationship
         # ----------------------------------------------------
 
         if (
             status == "matched"
-            and relationship
-            not in self.INDIRECT_RELATIONSHIPS
-            and match_source
-            not in {
+            and relationship not in self.INDIRECT_RELATIONSHIPS
+            and match_source not in {
                 "hybrid",
                 "relationship",
             }
@@ -189,29 +174,30 @@ class RequirementReasoner:
         """
         Determine whether the HybridMatcher result
         represents an indirect relationship.
+
+        Examples:
+
+            MySQL → SQL
+            TensorFlow → Machine Learning
         """
 
-        if not isinstance(
-            hybrid_result,
-            dict
-        ):
+        if not isinstance(hybrid_result, dict):
             return False
 
         relationship = self._normalize(
-            hybrid_result.get(
-                "relationship"
-            )
+            hybrid_result.get("relationship")
         )
 
         match_source = self._normalize(
-            hybrid_result.get(
-                "match_source"
-            )
+            hybrid_result.get("match_source")
         )
 
+        # Explicit relationship
         if relationship in self.INDIRECT_RELATIONSHIPS:
             return True
 
+        # Hybrid / relationship matcher can also provide
+        # indirect relationships.
         if match_source in {
             "relationship",
             "hybrid",
@@ -233,24 +219,22 @@ class RequirementReasoner:
         support for the requirement.
         """
 
-        if not isinstance(
-            context_result,
-            dict
-        ):
+        if not isinstance(context_result, dict):
             return False
 
         context_status = self._normalize(
-            context_result.get(
-                "context_status"
-            )
+            context_result.get("context_status")
         )
 
-        context_score = float(
-            context_result.get(
-                "context_score",
-                0.0
-            ) or 0.0
-        )
+        try:
+            context_score = float(
+                context_result.get(
+                    "context_score",
+                    0.0
+                ) or 0.0
+            )
+        except (TypeError, ValueError):
+            context_score = 0.0
 
         if context_status == "supported":
             return True
@@ -272,22 +256,24 @@ class RequirementReasoner:
         Determine whether any resume evidence exists.
         """
 
-        if not isinstance(
-            evidence_result,
-            dict
-        ):
+        if not isinstance(evidence_result, dict):
             return False
+
+        # ----------------------------------------------------
+        # Evidence list
+        # ----------------------------------------------------
 
         evidence = evidence_result.get(
             "evidence",
             []
         )
 
-        if isinstance(
-            evidence,
-            list
-        ) and evidence:
+        if isinstance(evidence, list) and evidence:
             return True
+
+        # ----------------------------------------------------
+        # Evidence count
+        # ----------------------------------------------------
 
         evidence_count = evidence_result.get(
             "evidence_count",
@@ -295,18 +281,14 @@ class RequirementReasoner:
         )
 
         try:
-
-            if int(
-                evidence_count
-            ) > 0:
+            if int(evidence_count) > 0:
                 return True
-
-        except (
-            TypeError,
-            ValueError
-        ):
-
+        except (TypeError, ValueError):
             pass
+
+        # ----------------------------------------------------
+        # Evidence strength
+        # ----------------------------------------------------
 
         evidence_strength = evidence_result.get(
             "evidence_strength",
@@ -314,17 +296,9 @@ class RequirementReasoner:
         )
 
         try:
-
-            if float(
-                evidence_strength
-            ) > 0:
+            if float(evidence_strength) > 0:
                 return True
-
-        except (
-            TypeError,
-            ValueError
-        ):
-
+        except (TypeError, ValueError):
             pass
 
         return False
@@ -349,12 +323,10 @@ class RequirementReasoner:
             certification
         """
 
-        if not isinstance(
-            evidence_result,
-            dict
-        ):
+        if not isinstance(evidence_result, dict):
             return False
 
+        # Explicit direct evidence flag
         if evidence_result.get(
             "direct_evidence",
             False
@@ -366,10 +338,7 @@ class RequirementReasoner:
             []
         )
 
-        if not isinstance(
-            evidence,
-            list
-        ):
+        if not isinstance(evidence, list):
             return False
 
         direct_sources = {
@@ -381,16 +350,11 @@ class RequirementReasoner:
 
         for item in evidence:
 
-            if not isinstance(
-                item,
-                dict
-            ):
+            if not isinstance(item, dict):
                 continue
 
             source = self._normalize(
-                item.get(
-                    "source"
-                )
+                item.get("source")
             )
 
             if source in direct_sources:
@@ -419,10 +383,7 @@ class RequirementReasoner:
         a confirmed direct match.
         """
 
-        if not isinstance(
-            hybrid_result,
-            dict
-        ):
+        if not isinstance(hybrid_result, dict):
             return 0.0
 
         confidence = hybrid_result.get(
@@ -434,16 +395,8 @@ class RequirementReasoner:
         )
 
         try:
-
-            confidence = float(
-                confidence
-            )
-
-        except (
-            TypeError,
-            ValueError
-        ):
-
+            confidence = float(confidence)
+        except (TypeError, ValueError):
             confidence = 0.0
 
         confidence = max(
@@ -493,10 +446,7 @@ class RequirementReasoner:
         evidence score.
         """
 
-        if not isinstance(
-            evidence_result,
-            dict
-        ):
+        if not isinstance(evidence_result, dict):
             return 0.0
 
         evidence_strength = evidence_result.get(
@@ -505,16 +455,10 @@ class RequirementReasoner:
         )
 
         try:
-
             evidence_strength = float(
                 evidence_strength
             )
-
-        except (
-            TypeError,
-            ValueError
-        ):
-
+        except (TypeError, ValueError):
             evidence_strength = 0.0
 
         evidence_strength = max(
@@ -543,10 +487,7 @@ class RequirementReasoner:
         context score.
         """
 
-        if not isinstance(
-            context_result,
-            dict
-        ):
+        if not isinstance(context_result, dict):
             return 0.0
 
         context_score = context_result.get(
@@ -555,16 +496,10 @@ class RequirementReasoner:
         )
 
         try:
-
             context_score = float(
                 context_score
             )
-
-        except (
-            TypeError,
-            ValueError
-        ):
-
+        except (TypeError, ValueError):
             context_score = 0.0
 
         context_score = max(
@@ -595,9 +530,9 @@ class RequirementReasoner:
 
         Formula:
 
-            Match       × 0.35
-            Context     × 0.30
-            Evidence    × 0.35
+            Match    × 0.35
+            Context  × 0.30
+            Evidence × 0.35
         """
 
         confidence = (
@@ -635,26 +570,39 @@ class RequirementReasoner:
         """
         Determine the final requirement status.
 
-        Reasoning priority:
+        Classification rules:
 
-            1. Direct match + supporting evidence
-            2. Direct match + context
-            3. Direct match with high confidence
-            4. Relationship + direct evidence + context
-            5. Relationship + strong direct evidence
-            6. Direct match without enough support
-            7. Relationship match
-            8. Context + evidence
-            9. Evidence only
-            10. Unknown
+            Direct + supporting evidence/context
+                → matched
+
+            Direct + high confidence
+                → matched
+
+            Direct without sufficient support
+                → possible
+
+            Relationship match
+                → possible
+
+            Context + evidence
+                → possible
+
+            Evidence only
+                → possible
+
+            Otherwise
+                → unknown
 
         Important:
 
-        A relationship match alone does NOT become matched.
+        An indirect relationship such as:
 
-        However, if the resume itself directly demonstrates
-        the requirement and the context layer confirms that
-        evidence, the requirement can become matched.
+            MySQL → SQL
+
+        must NOT become "matched" merely because the
+        relationship is strong.
+
+        It is classified as "possible".
         """
 
         # ----------------------------------------------------
@@ -682,44 +630,21 @@ class RequirementReasoner:
             return "matched"
 
         # ----------------------------------------------------
-        # 3. INDIRECT MATCH + DIRECT EVIDENCE + CONTEXT
-        # ----------------------------------------------------
-
-        if (
-            relationship_match
-            and direct_evidence
-            and context_supported
-            and confidence >= self.MATCHED_CONFIDENCE
-        ):
-            return "matched"
-
-        # ----------------------------------------------------
-        # 4. INDIRECT MATCH + STRONG DIRECT EVIDENCE
-        # ----------------------------------------------------
-
-        if (
-            relationship_match
-            and direct_evidence
-            and confidence >= self.STRONG_CONFIDENCE
-        ):
-            return "matched"
-
-        # ----------------------------------------------------
-        # 5. DIRECT MATCH WITHOUT ENOUGH SUPPORT
+        # 3. DIRECT MATCH WITHOUT ENOUGH SUPPORT
         # ----------------------------------------------------
 
         if direct_match:
             return "possible"
 
         # ----------------------------------------------------
-        # 6. RELATIONSHIP MATCH
+        # 4. RELATIONSHIP MATCH
         # ----------------------------------------------------
 
         if relationship_match:
             return "possible"
 
         # ----------------------------------------------------
-        # 7. CONTEXT + EVIDENCE
+        # 5. CONTEXT + EVIDENCE
         # ----------------------------------------------------
 
         if (
@@ -730,14 +655,14 @@ class RequirementReasoner:
             return "possible"
 
         # ----------------------------------------------------
-        # 8. EVIDENCE ONLY
+        # 6. EVIDENCE ONLY
         # ----------------------------------------------------
 
         if evidence_found:
             return "possible"
 
         # ----------------------------------------------------
-        # 9. UNKNOWN
+        # 7. UNKNOWN
         # ----------------------------------------------------
 
         return "unknown"
@@ -762,6 +687,10 @@ class RequirementReasoner:
         requirement classification.
         """
 
+        # ----------------------------------------------------
+        # MATCHED
+        # ----------------------------------------------------
+
         if status == "matched":
 
             if (
@@ -769,7 +698,6 @@ class RequirementReasoner:
                 and context_supported
                 and direct_evidence
             ):
-
                 return (
                     f"{requirement} is directly matched and "
                     "supported by resume evidence and context."
@@ -779,7 +707,6 @@ class RequirementReasoner:
                 direct_match
                 and direct_evidence
             ):
-
                 return (
                     f"{requirement} is directly matched and "
                     "supported by resume evidence."
@@ -789,33 +716,9 @@ class RequirementReasoner:
                 direct_match
                 and context_supported
             ):
-
                 return (
                     f"{requirement} is directly matched and "
                     "supported by resume context."
-                )
-
-            if (
-                relationship_match
-                and direct_evidence
-                and context_supported
-            ):
-
-                return (
-                    f"{requirement} has an indirect skill "
-                    "relationship, but the resume directly "
-                    "demonstrates the requirement and the "
-                    "context layer supports it."
-                )
-
-            if (
-                relationship_match
-                and direct_evidence
-            ):
-
-                return (
-                    f"{requirement} has a related skill match "
-                    "and is directly supported by resume evidence."
                 )
 
             return (
@@ -823,13 +726,16 @@ class RequirementReasoner:
                 "by the candidate's resume."
             )
 
+        # ----------------------------------------------------
+        # POSSIBLE
+        # ----------------------------------------------------
+
         if status == "possible":
 
             if (
                 relationship_match
                 and not direct_evidence
             ):
-
                 return (
                     f"{requirement} has a related skill match, "
                     "but it is not directly demonstrated in "
@@ -840,7 +746,6 @@ class RequirementReasoner:
                 evidence_found
                 and not direct_match
             ):
-
                 return (
                     f"{requirement} has resume evidence, "
                     "but the match is not sufficiently direct "
@@ -848,7 +753,6 @@ class RequirementReasoner:
                 )
 
             if context_supported:
-
                 return (
                     f"{requirement} has contextual support, "
                     "but the available evidence is not strong "
@@ -859,6 +763,10 @@ class RequirementReasoner:
                 f"{requirement} has some supporting signals, "
                 "but additional evidence is needed."
             )
+
+        # ----------------------------------------------------
+        # UNKNOWN
+        # ----------------------------------------------------
 
         return (
             f"No direct or sufficient supporting evidence "
@@ -892,7 +800,7 @@ class RequirementReasoner:
 
         Returns:
 
-            A structured requirement reasoning result.
+            Structured requirement reasoning result.
         """
 
         # ----------------------------------------------------
@@ -977,10 +885,7 @@ class RequirementReasoner:
                 "evidence_quality",
                 "none"
             )
-            if isinstance(
-                evidence_result,
-                dict
-            )
+            if isinstance(evidence_result, dict)
             else "none"
         )
 
@@ -988,10 +893,7 @@ class RequirementReasoner:
             evidence_result.get(
                 "best_source"
             )
-            if isinstance(
-                evidence_result,
-                dict
-            )
+            if isinstance(evidence_result, dict)
             else None
         )
 
@@ -1000,24 +902,15 @@ class RequirementReasoner:
                 "source_coverage",
                 0.0
             )
-            if isinstance(
-                evidence_result,
-                dict
-            )
+            if isinstance(evidence_result, dict)
             else 0.0
         )
 
         try:
-
             source_coverage = float(
                 source_coverage
             )
-
-        except (
-            TypeError,
-            ValueError
-        ):
-
+        except (TypeError, ValueError):
             source_coverage = 0.0
 
         source_coverage = max(
@@ -1049,37 +942,23 @@ class RequirementReasoner:
 
         return {
             "requirement": requirement,
-
             "status": status,
-
             "confidence": confidence,
-
             "direct_match": direct_match,
-
             "relationship_match": relationship_match,
-
             "context_supported": context_supported,
-
             "evidence_found": evidence_found,
-
             "direct_evidence": direct_evidence,
-
             "match_score": match_score,
-
             "context_score": context_score,
-
             "evidence_score": evidence_score,
-
             "evidence_quality": evidence_quality,
-
             "best_source": best_source,
-
             "source_coverage": round(
                 source_coverage,
                 4
             ),
-
-            "reason": reason
+            "reason": reason,
         }
 
     # ========================================================

@@ -387,9 +387,10 @@ def find_project_evidence(
 
         if isinstance(project, dict):
 
-            project_name = project.get(
-                "project_name",
-                ""
+            project_name = (
+                project.get("project_name")
+                or project.get("name")
+                or ""
             )
 
             description = project.get(

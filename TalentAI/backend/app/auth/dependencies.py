@@ -1,3 +1,4 @@
+
 from jose import JWTError
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
@@ -8,9 +9,8 @@ from app.core.security import decode_access_token
 from app.database.session import get_db
 
 
-# Reads the JWT token from the Authorization header
 oauth2_scheme = OAuth2PasswordBearer(
-    tokenUrl="/auth/login"
+    tokenUrl="/api/v1/auth/login",
 )
 
 
@@ -18,57 +18,56 @@ def get_current_user(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ) -> User:
-
-    print("=" * 50)
-    print("Token received:", token)
-
-    """
-    Get the currently authenticated user.
-    """
-
-    print("=" * 50)
-    print("Token received:", token)
+    """Get the authenticated user and validate their JWT version."""
 
     try:
-
-        # Decode the JWT token
         payload = decode_access_token(token)
-        print("Payload:", payload)
-
-        # Get the email stored in the 'sub' claim
         email = payload.get("sub")
-        print("Email from token:", email)
 
-        # If no email is found, the token is invalid
-        if email is None:
+        if not email:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid token",
+                detail="Invalid authentication token.",
+                headers={"WWW-Authenticate": "Bearer"},
             )
 
-    except JWTError as e:
-        print("JWT Error:", e)
-
+    except JWTError:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Could not validate credentials",
+            detail="Could not validate credentials.",
+            headers={"WWW-Authenticate": "Bearer"},
         )
 
-    # Find the user in the database
     user = (
         db.query(User)
         .filter(User.email == email)
         .first()
     )
 
-    print("User from DB:", user)
-    print("=" * 50)
-
-    # If user doesn't exist
     if user is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="User not found",
+            detail="User not found.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    token_version = payload.get("token_version")
+
+    if (
+        not isinstance(token_version, int)
+        or isinstance(token_version, bool)
+        or token_version != user.token_version
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token is no longer valid. Please log in again.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    if not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="User account is inactive.",
         )
 
     return user
