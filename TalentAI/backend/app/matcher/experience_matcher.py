@@ -1,3 +1,4 @@
+from email.mime import text
 import re
 from datetime import date
 from typing import Any, Dict, Optional
@@ -88,123 +89,102 @@ def is_current_date(
 # ============================================================
 # PARSE MONTH + YEAR
 # ============================================================
+
 def parse_month_year(
-          text: str
+    text: str
 ) -> Optional[date]:
-          """
-          Parse a date containing month + year or year only.
-          Supported:
-                    03/2025
-                    3/2025
-                    03-2025
-                    3-2025
-                    March 2025
-                    Mar 2025
-                    March, 2025
-                    Mar, 2025
-                    2025
-                    2024
-                    1999
-          Returns:
-                    datetime.date with first day of month.
-          Returns None when no supported date is found.
-          """
-          if not text:
-                    return None
-          text = normalize_date_text(
-                    text
-          )
-          if not text:
-                    return None
-          # ========================================================
-          # NUMERIC MONTH + YEAR
-          # ========================================================
-          numeric_match = re.search(
-                    r"\b(0?[1-9]|1[0-2])\s*[/\\-]\s*((?:19|20)\d{2})\b",
-                    text
-          )
-          if numeric_match:
-                    month = int(
-                              numeric_match.group(1)
-                    )
-                    year = int(
-                              numeric_match.group(2)
-                    )
-                    try:
-                              return date(
-                                        year,
-                                        month,
-                                        1
-                              )
-                    except ValueError:
-                              return None
-          # ========================================================
-          # MONTH NAME + YEAR
-          # ========================================================
-          month_year_pattern = (
-                    r"\b("
-                    r"January|Jan|"
-                    r"February|Feb|"
-                    r"March|Mar|"
-                    r"April|Apr|"
-                    r"May|"
-                    r"June|Jun|"
-                    r"July|Jul|"
-                    r"August|Aug|"
-                    r"September|Sep|Sept|"
-                    r"October|Oct|"
-                    r"November|Nov|"
-                    r"December|Dec"
-                    r")"
-                    r"\s*,?\s*"
-                    r"((?:19|20)\d{2})\b"
-          )
-          month_year_match = re.search(
-                    month_year_pattern,
-                    text,
-                    re.IGNORECASE
-          )
-          if month_year_match:
-                    month_text = (
-                              month_year_match
-                              .group(1)
-                              .lower()
-                    )
-                    year = int(
-                              month_year_match.group(2)
-                    )
-                    month = MONTHS.get(
-                              month_text
-                    )
-                    if month is not None:
-                              try:
-                                        return date(
-                                                  year,
-                                                  month,
-                                                  1
-                                        )
-                              except ValueError:
-                                        return None
-          # ========================================================
-          # YEAR ONLY
-          # ========================================================
-          year_match = re.search(
-                    r"\b((?:19|20)\d{2})\b",
-                    text
-          )
-          if year_match:
-                    year = int(
-                              year_match.group(1)
-                    )
-                    try:
-                              return date(
-                                        year,
-                                        1,
-                                        1
-                              )
-                    except ValueError:
-                              return None
-          return None
+    """
+    Parse ISO dates, month/year formats, month names,
+    and year-only values.
+    """
+
+    if not text:
+        return None
+
+    text = normalize_date_text(text)
+
+    if not text:
+        return None
+
+    # ========================================================
+    # ISO DATE: YYYY-MM-DD
+    # ========================================================
+    iso_match = re.fullmatch(
+        r"((?:19|20)\d{2})-(0?[1-9]|1[0-2])-(0?[1-9]|[12]\d|3[01])",
+        text
+    )
+
+    if iso_match:
+        year = int(iso_match.group(1))
+        month = int(iso_match.group(2))
+        day = int(iso_match.group(3))
+
+        try:
+            return date(year, month, day)
+        except ValueError:
+            return None
+
+    # ========================================================
+    # NUMERIC MONTH + YEAR
+    # ========================================================
+    numeric_match = re.fullmatch(
+        r"(0?[1-9]|1[0-2])\s*[/\\-]\s*((?:19|20)\d{2})",
+        text
+    )
+
+    if numeric_match:
+        month = int(numeric_match.group(1))
+        year = int(numeric_match.group(2))
+
+        return date(year, month, 1)
+
+    # ========================================================
+    # MONTH NAME + YEAR
+    # ========================================================
+    month_year_pattern = (
+        r"(January|Jan|"
+        r"February|Feb|"
+        r"March|Mar|"
+        r"April|Apr|"
+        r"May|"
+        r"June|Jun|"
+        r"July|Jul|"
+        r"August|Aug|"
+        r"September|Sep|Sept|"
+        r"October|Oct|"
+        r"November|Nov|"
+        r"December|Dec)"
+        r"\s*,?\s*"
+        r"((?:19|20)\d{2})"
+    )
+
+    month_year_match = re.fullmatch(
+        month_year_pattern,
+        text,
+        re.IGNORECASE
+    )
+
+    if month_year_match:
+        month_text = month_year_match.group(1).lower()
+        year = int(month_year_match.group(2))
+        month = MONTHS.get(month_text)
+
+        if month is not None:
+            return date(year, month, 1)
+
+    # ========================================================
+    # YEAR ONLY
+    # ========================================================
+    year_match = re.fullmatch(
+        r"((?:19|20)\d{2})",
+        text
+    )
+
+    if year_match:
+        return date(int(year_match.group(1)), 1, 1)
+
+    return None
+
 # ============================================================
 # PARSE EXPERIENCE DATE
 # ============================================================
@@ -639,114 +619,195 @@ def calculate_experience_details(
 # ============================================================
 # MATCH EXPERIENCE
 # ============================================================
-def match_experience(
-          resume: dict,
-          required_experience: dict | None
-) -> dict:
-          """
-          Match candidate experience against job requirements.
-          """
-          # ========================================================
-          # NO EXPERIENCE REQUIREMENT
-          # ========================================================
-          if not required_experience:
-                    return {
-                              "status": "not_required",
-                              "required_years": None,
-                              "candidate_years": None,
-                              "experience_details": [],
-                    }
-          required_years = (
-                    required_experience.get(
-                              "minimum_years"
-                    )
-          )
-          # ========================================================
-          # REQUIREMENT EXISTS BUT YEARS UNKNOWN
-          # ========================================================
-          if required_years is None:
-                    return {
-                              "status": "unknown",
-                              "required_years": None,
-                              "candidate_years": None,
-                              "experience_details": [],
-                    }
-          # ========================================================
-          # NO RESUME
-          # ========================================================
-          if not resume:
-                    return {
-                              "status": "unknown",
-                              "required_years": required_years,
-                              "candidate_years": None,
-                              "experience_details": [],
-                    }
-          # ========================================================
-          # RESUME EXPERIENCE
-          # ========================================================
-          experiences = resume.get(
-                    "experience",
-                    []
-          )
-          if not isinstance(
-                    experiences,
-                    list
-          ):
-                    experiences = []
 
-          if not experiences:
-                    return {
-                            "status": "missing",
-                            "required_years": required_years,
-                            "candidate_years": 0.0,
-                            "experience_details": [],
-                    }
-                            
-          # ========================================================
-          # INDIVIDUAL EXPERIENCE DETAILS
-          # ========================================================
-          experience_details = (
-                    calculate_experience_details(
-                              experiences
-                    )
-          )
-          # ========================================================
-          # TOTAL CANDIDATE EXPERIENCE
-          # ========================================================
-          candidate_years = (
-                    calculate_total_experience(
-                              experiences
-                    )
-          )
-          # ========================================================
-          # CANNOT DETERMINE EXPERIENCE
-          # ========================================================
-          if candidate_years is None:
-                    return {
-                              "status": "unknown",
-                              "required_years": required_years,
-                              "candidate_years": None,
-                              "experience_details": (
-                                        experience_details
-                              ),
-                    }
-          # ========================================================
-          # COMPARE CANDIDATE VS REQUIREMENT
-          # ========================================================
-          if candidate_years >= required_years:
-                    status = "matched"
-          elif candidate_years > 0:
-                    status = "partial"
-          else:
-                    status = "missing"
-          # ========================================================
-          # FINAL RESULT
-          # ========================================================
-          return {
-                    "status": status,
-                    "required_years": required_years,
-                    "candidate_years": candidate_years,
-                    "experience_details": (
-                              experience_details
-                    ),
-          }
+def match_experience(
+    resume: dict,
+    required_experience: dict | None
+) -> dict:
+    """
+    Match candidate experience against job requirements.
+
+    Expected requirement format:
+    {
+        "minimum_years": 0
+    }
+
+    Returns:
+        status:
+            - not_required
+            - unknown
+            - missing
+            - matched
+            - partial
+    """
+
+    # ========================================================
+    # NO EXPERIENCE REQUIREMENT
+    # ========================================================
+
+    if required_experience is None:
+        return {
+            "status": "not_required",
+            "required_years": None,
+            "candidate_years": None,
+            "experience_details": [],
+        }
+
+    # ========================================================
+    # VALIDATE REQUIREMENT FORMAT
+    # ========================================================
+
+    if not isinstance(required_experience, dict):
+        return {
+            "status": "unknown",
+            "required_years": None,
+            "candidate_years": None,
+            "experience_details": [],
+        }
+
+    required_years = required_experience.get("minimum_years")
+
+    # ========================================================
+    # VALIDATE REQUIRED YEARS
+    # ========================================================
+
+    if required_years is None:
+        return {
+            "status": "unknown",
+            "required_years": None,
+            "candidate_years": None,
+            "experience_details": [],
+        }
+
+    try:
+        required_years = float(required_years)
+    except (TypeError, ValueError):
+        return {
+            "status": "unknown",
+            "required_years": None,
+            "candidate_years": None,
+            "experience_details": [],
+        }
+
+    if required_years < 0:
+        return {
+            "status": "unknown",
+            "required_years": None,
+            "candidate_years": None,
+            "experience_details": [],
+        }
+
+    # ========================================================
+    # ZERO YEARS REQUIRED
+    # ========================================================
+
+    if required_years == 0:
+        return {
+            "status": "matched",
+            "required_years": 0.0,
+            "candidate_years": None,
+            "experience_details": [],
+        }
+
+    # ========================================================
+    # NO RESUME
+    # ========================================================
+
+    if not isinstance(resume, dict):
+        return {
+            "status": "unknown",
+            "required_years": required_years,
+            "candidate_years": None,
+            "experience_details": [],
+        }
+
+    # ========================================================
+    # GET RESUME EXPERIENCE
+    # ========================================================
+
+    experiences = resume.get("experience", [])
+
+    if not isinstance(experiences, list):
+        experiences = []
+
+    if not experiences:
+        return {
+            "status": "missing",
+            "required_years": required_years,
+            "candidate_years": 0.0,
+            "experience_details": [],
+        }
+
+    # ========================================================
+    # INDIVIDUAL EXPERIENCE DETAILS
+    # ========================================================
+
+    experience_details = calculate_experience_details(
+        experiences
+    )
+
+    # ========================================================
+    # TOTAL CANDIDATE EXPERIENCE
+    # ========================================================
+
+    candidate_years = calculate_total_experience(
+        experiences
+    )
+
+    # ========================================================
+    # CANNOT DETERMINE EXPERIENCE
+    # ========================================================
+
+    if candidate_years is None:
+        return {
+            "status": "unknown",
+            "required_years": required_years,
+            "candidate_years": None,
+            "experience_details": experience_details,
+        }
+
+    # ========================================================
+    # NORMALIZE CANDIDATE EXPERIENCE
+    # ========================================================
+
+    try:
+        candidate_years = float(candidate_years)
+    except (TypeError, ValueError):
+        return {
+            "status": "unknown",
+            "required_years": required_years,
+            "candidate_years": None,
+            "experience_details": experience_details,
+        }
+
+    if candidate_years < 0:
+        return {
+            "status": "unknown",
+            "required_years": required_years,
+            "candidate_years": None,
+            "experience_details": experience_details,
+        }
+
+    # ========================================================
+    # COMPARE CANDIDATE VS REQUIREMENT
+    # ========================================================
+
+    if candidate_years >= required_years:
+        status = "matched"
+
+    elif candidate_years > 0:
+        status = "partial"
+
+    else:
+        status = "missing"
+
+    # ========================================================
+    # FINAL RESULT
+    # ========================================================
+
+    return {
+        "status": status,
+        "required_years": required_years,
+        "candidate_years": candidate_years,
+        "experience_details": experience_details,
+    }

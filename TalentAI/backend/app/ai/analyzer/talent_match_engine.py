@@ -87,7 +87,9 @@ class TalentMatchEngine:
         )
 
         self.project_relevance_analyzer = (
-            ProjectRelevanceAnalyzer()
+            ProjectRelevanceAnalyzer(
+                matcher=self.hybrid_matcher
+            )
         )
 
         self.requirement_reasoner = (
@@ -695,22 +697,25 @@ class TalentMatchEngine:
 
     # ========================================================
     # EXPERIENCE MATCH
-    # ========================================================
-
+    # =====================================================
+     
     def analyze_experience(
         self,
         resume: Dict,
         job: Dict
     ) -> Dict:
+        """
+    Analyze candidate experience against job requirements.
+    Handles invalid requirement formats safely.
+    """
 
-        experience_matcher = (
-            self._get_experience_matcher()
-        )
+        experience_matcher = self._get_experience_matcher()
 
-        requirement = job.get(
-            "experience",
-            {}
-        )
+        requirement = job.get("experience")
+
+    # --------------------------------------------------------
+    # NORMALIZE EXPERIENCE REQUIREMENT
+    # --------------------------------------------------------
 
         if isinstance(requirement, dict):
             requirement = dict(requirement)
@@ -719,39 +724,48 @@ class TalentMatchEngine:
                 "minimum_years" not in requirement
                 and "min_years" in requirement
             ):
+                requirement["minimum_years"] = requirement["min_years"]
 
-                requirement["minimum_years"] = (
-                    requirement["min_years"]
-                )
+        elif requirement is None:
+            requirement = None
+
+        else:
+        # Invalid formats such as "0-2 years"
+            requirement = None
+
+        required_years = (
+            requirement.get("minimum_years")
+            if isinstance(requirement, dict)
+            else None
+        )
+
+    # --------------------------------------------------------
+    # MATCHER UNAVAILABLE
+    # --------------------------------------------------------
 
         if experience_matcher is None:
-
             return {
                 "status": "unknown",
-                "required_years": requirement.get(
-                    "minimum_years"
-                ),
-                "candidate_years": None
+                "required_years": required_years,
+                "candidate_years": None,
+                "experience_details": [],
             }
 
-        try:
+    # --------------------------------------------------------
+    # PRIMARY EXPERIENCE MATCHING
+    # --------------------------------------------------------
 
+        try:
             return experience_matcher(
                 resume,
                 requirement
             )
 
         except TypeError:
-
-            # Backward compatibility
+        # Backward compatibility with older matcher signatures.
 
             try:
-
-                experience = (
-                    self._get_experience_entries(
-                        resume
-                    )
-                )
+                experience = self._get_experience_entries(resume)
 
                 return experience_matcher(
                     experience,
@@ -759,24 +773,21 @@ class TalentMatchEngine:
                 )
 
             except Exception:
-
                 return {
                     "status": "unknown",
-                    "required_years": requirement.get(
-                        "minimum_years"
-                    ),
-                    "candidate_years": None
+                    "required_years": required_years,
+                    "candidate_years": None,
+                    "experience_details": [],
                 }
 
         except Exception:
-
             return {
                 "status": "unknown",
-                "required_years": requirement.get(
-                    "minimum_years"
-                ),
-                "candidate_years": None
+                "required_years": required_years,
+                "candidate_years": None,
+                "experience_details": [],
             }
+
 
     # ========================================================
     # RELEVANT EXPERIENCE
@@ -934,16 +945,10 @@ class TalentMatchEngine:
         job: Dict
     ) -> Dict:
 
-        requirements = job.get(
-            "education",
-            []
-        )
+        requirements = job.get("education", [])
 
         try:
-
-            from app.matcher.education_matcher import (
-                match_education
-            )
+            from app.matcher.education_matcher import match_education
 
             return match_education(
                 resume,
@@ -951,85 +956,74 @@ class TalentMatchEngine:
             )
 
         except ImportError:
-
             return {
                 "status": "unknown",
                 "matched": [],
+                "not_matched": [],
                 "unknown": requirements
             }
 
         except TypeError:
-
             # Backward compatibility
 
             try:
-
-                education = (
-                    self._get_education_entries(
-                        resume
-                    )
-                )
+                education = self._get_education_entries(resume)
 
                 from app.matcher.education_matcher import (
                     match_education_requirement
                 )
 
                 matched = []
+                not_matched = []
                 unknown = []
 
                 for requirement in requirements:
 
-                    result = (
-                        match_education_requirement(
-                            requirement,
-                            education
-                        )
+                    result = match_education_requirement(
+                        requirement,
+                        education
                     )
 
-                    if result.get(
-                        "status"
-                    ) in (
-                        "exact",
-                        "related",
-                        "matched"
-                    ):
+                    status = result.get("status")
 
-                        matched.append(
-                            result
-                        )
+                    if status in ("exact", "related", "matched"):
+                        matched.append(result)
+
+                    elif status == "not_matched":
+                        not_matched.append(result)
 
                     else:
+                        unknown.append(result)
 
-                        unknown.append(
-                            result
-                        )
+                if matched:
+                    overall_status = "matched"
+                elif not_matched and not unknown:
+                    overall_status = "not_matched"
+                else:
+                    overall_status = "unknown"
 
                 return {
-                    "status": (
-                        "matched"
-                        if matched
-                        else "unknown"
-                    ),
+                    "status": overall_status,
                     "matched": matched,
+                    "not_matched": not_matched,
                     "unknown": unknown
                 }
 
             except Exception:
-
                 return {
                     "status": "unknown",
                     "matched": [],
+                    "not_matched": [],
                     "unknown": requirements
                 }
 
         except Exception:
-
             return {
                 "status": "unknown",
                 "matched": [],
+                "not_matched": [],
                 "unknown": requirements
             }
-
     # ========================================================
     # PROJECT MATCH
     # ========================================================
@@ -1233,34 +1227,55 @@ class TalentMatchEngine:
     # ========================================================
     # PROJECT RELEVANCE
     # ========================================================
-
+    
     def analyze_project_relevance(
         self,
         resume: Dict,
         required_skills: List[str],
-        preferred_skills: List[str]
+        preferred_skills: List[str],
+        job: Dict = None
     ) -> Dict:
         """
-        Analyze how relevant candidate projects are
-        to the target job.
-        """
+    Analyze how relevant candidate projects are
+    to the target job.
+    """
 
         try:
+            projects = resume.get("projects", [])
 
-            projects = resume.get(
-                "projects",
-                []
+            job = job or {}
+
+            job_title = (
+                job.get("title")
+                or job.get("job_title")
+                or ""
             )
+
+            job_description = (
+                job.get("description")
+                or ""
+            )
+
+            responsibilities = job.get(
+                "responsibilities",
+                []
+            ) or []
+
+            requirements = job.get(
+                "requirements",
+                []
+            ) or []
 
             result = self.project_relevance_analyzer.analyze(
                 projects=projects,
                 required_skills=required_skills,
-                preferred_skills=preferred_skills
+                preferred_skills=preferred_skills,
+                job_title=job_title,
+                job_description=job_description,
+                responsibilities=responsibilities,
+                requirements=requirements
             )
 
-            # Normalize project relevance so downstream layers
-            # receive a top-level status. The analyzer currently
-            # stores status inside each relevant project.
             if not isinstance(result, dict):
                 return {
                     "overall_project_relevance": 0.0,
@@ -1274,43 +1289,30 @@ class TalentMatchEngine:
                     "relevant_projects", []
                 )
 
-                if isinstance(relevant_projects, list):
-                    valid_projects = [
-                        project
-                        for project in relevant_projects
-                        if isinstance(project, dict)
-                    ]
+                valid_projects = [
+                    project
+                    for project in relevant_projects
+                    if isinstance(project, dict)
+                ] if isinstance(relevant_projects, list) else []
 
-                    if valid_projects:
-                        def _project_relevance_score(project):
-                            try:
-                                return float(
-                                    project.get(
-                                        "relevance_score",
-                                        0.0
-                                    ) or 0.0
-                                )
-                            except (TypeError, ValueError):
-                                return 0.0
-
-                        best_project = max(
-                            valid_projects,
-                            key=_project_relevance_score
+                if valid_projects:
+                    best_project = max(
+                        valid_projects,
+                        key=lambda project: float(
+                            project.get("relevance_score", 0.0) or 0.0
                         )
+                    )
 
-                        result["status"] = best_project.get(
-                            "status",
-                            "unknown"
-                        )
-                    else:
-                        result["status"] = "unknown"
+                    result["status"] = best_project.get(
+                        "status",
+                        "unknown"
+                    )
                 else:
                     result["status"] = "unknown"
 
             return result
 
         except Exception as error:
-
             return {
                 "overall_project_relevance": 0.0,
                 "project_count": 0,
@@ -1318,6 +1320,7 @@ class TalentMatchEngine:
                 "status": "unknown",
                 "error": str(error)
             }
+
 
        # ========================================================
     # EVIDENCE
@@ -1423,7 +1426,6 @@ class TalentMatchEngine:
                 resume
             )
         )
-
         # ----------------------------------------------------
         # Required skills
         # ----------------------------------------------------
@@ -1540,10 +1542,39 @@ class TalentMatchEngine:
             self.analyze_project_relevance(
                 resume=resume,
                 required_skills=required_skills,
-                preferred_skills=preferred_skills
+                preferred_skills=preferred_skills,
+                job=job          
             )
         )
+ 
+                # ----------------------------------------------------
+        # ATTACH INDIVIDUAL PROJECT RELEVANCE DETAILS
+        # ----------------------------------------------------
 
+        if isinstance(project_result, dict):
+
+            project_result["project_details"] = (
+                project_relevance_result.get(
+                    "relevant_projects",
+                    []
+                )
+            )
+
+            project_result["overall_project_relevance"] = (
+                project_relevance_result.get(
+                    "overall_project_relevance",
+                    0.0
+                )
+            )
+
+            project_result["project_count"] = (
+                project_relevance_result.get(
+                    "project_count",
+                    project_result.get("project_count", 0)
+                )
+            )
+
+            
         return {
             "job_title": (job.get("title")
             or job.get("job_title")

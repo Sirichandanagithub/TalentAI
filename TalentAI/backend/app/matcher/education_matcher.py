@@ -188,27 +188,142 @@ def normalize_education_entry(
 
     parts = []
 
-    for key in [
-        "institution",
-        "program",
-        "degree",
-        "field",
-        "location"
-    ]:
-
-        value = education.get(
-            key
-        )
-
+    for key in ("program", "degree", "field"):
+        value = education.get(key)
         if value:
+            parts.append(str(value))
 
-            parts.append(
-                str(value)
-            )
+    # Fallback only when structured qualification fields are absent.
+    if not parts and education.get("raw_text"):
+        parts.append(str(education["raw_text"]))
 
-    return normalize_text(
-        " ".join(parts)
-    )
+    return normalize_text(" ".join(parts))
+
+# ============================================================
+# DEGREE AND FIELD RECOGNITION
+# ============================================================
+
+DEGREE_PATTERNS = {
+    "btech": [
+        r"\bb\s*\.?\s*tech\b",
+        r"\bbachelor of technology\b",
+    ],
+    "be": [
+        r"\bb\s*\.?\s*e\b",
+        r"\bbachelor of engineering\b",
+    ],
+    "bsc": [
+        r"\bb\s*\.?\s*sc\b",
+        r"\bbachelor of science\b",
+    ],
+    "bca": [
+        r"\bb\s*\.?\s*c\s*\.?\s*a\b",
+        r"\bbachelor of computer applications\b",
+    ],
+    "bcom": [
+        r"\bb\s*\.?\s*com\b",
+        r"\bbachelor of commerce\b",
+    ],
+    "ba": [
+        r"\bb\s*\.?\s*a\b",
+        r"\bbachelor of arts\b",
+    ],
+    "mtech": [
+        r"\bm\s*\.?\s*tech\b",
+        r"\bmaster of technology\b",
+    ],
+    "mba": [
+        r"\bm\s*\.?\s*b\s*\.?\s*a\b",
+        r"\bmaster of business administration\b",
+    ],
+}
+
+FIELD_PATTERNS = {
+    "computer_science": [
+        r"\bcse\b",
+        r"\bcomputer science\b",
+        r"\bcomputer engineering\b",
+        r"\bsoftware engineering\b",
+    ],
+    "artificial_intelligence": [
+        r"\bai\s*and\s*ml\b",
+        r"\bai\s*ml\b",
+        r"\bartificial intelligence\b",
+        r"\bmachine learning\b",
+        r"\baiml\b",
+    ],
+    "data_science": [
+        r"\bdata science\b",
+        r"\bdata analytics\b",
+        r"\bdata analysis\b",
+    ],
+    "information_technology": [
+        r"\binformation technology\b",
+        r"\binformation science\b",
+        r"\bit\b",
+    ],
+    "commerce": [
+        r"\bcommerce\b",
+        r"\bbcom\b",
+    ],
+    "business": [
+        r"\bbusiness administration\b",
+        r"\bmanagement\b",
+    ],
+    "arts": [
+        r"\barts\b",
+        r"\bhumanities\b",
+    ],
+}
+
+RELATED_FIELDS = {
+    "computer_science": {
+        "computer_science",
+        "artificial_intelligence",
+        "data_science",
+        "information_technology",
+    },
+}
+
+
+def detect_degree(text: str) -> Optional[str]:
+    text = normalize_text(text)
+
+    for degree, patterns in DEGREE_PATTERNS.items():
+        for pattern in patterns:
+            if re.search(pattern, text):
+                return degree
+
+    return None
+
+
+def detect_field(text: str) -> Optional[str]:
+    text = normalize_text(text)
+
+    for field, patterns in FIELD_PATTERNS.items():
+        for pattern in patterns:
+            if re.search(pattern, text):
+                return field
+
+    return None
+
+
+def extract_requirement_field(
+    requirement: str
+) -> Optional[str]:
+
+    return detect_field(requirement)
+
+
+def is_bachelor_degree(degree: Optional[str]) -> bool:
+    return degree in {
+        "btech",
+        "be",
+        "bsc",
+        "bca",
+        "bcom",
+        "ba",
+    }
 
 
 # ============================================================
@@ -271,54 +386,19 @@ def infer_degree_level(
     resume does not explicitly expose the degree name.
     """
 
-    normalized = normalize_text(
+    degree = detect_degree(
         candidate_text
     )
 
-    if not normalized:
-        return None
+    if is_bachelor_degree(degree):
+        return "bachelor"
+
+    return None
 
     # --------------------------------------------------------
     # Explicit bachelor's indicators
     # --------------------------------------------------------
 
-    bachelor_indicators = {
-        "btech",
-        "b tech",
-        "be",
-        "b e",
-        "bsc",
-        "b sc",
-        "bachelor",
-        "bachelors",
-        "bachelor of technology",
-        "bachelor of engineering",
-        "bachelor of science"
-    }
-
-    words = set(
-        normalized.split()
-    )
-
-    if words.intersection(
-        bachelor_indicators
-    ):
-        return "bachelor"
-
-    # --------------------------------------------------------
-    # Undergraduate field indicators
-    # --------------------------------------------------------
-
-    for field in BACHELOR_FIELD_PATTERNS:
-
-        field_normalized = normalize_text(
-            field
-        )
-
-        if field_normalized in normalized:
-            return "bachelor"
-
-    return None
 
 
 # ============================================================
@@ -330,124 +410,42 @@ def related_education_match(
     candidate_text: str
 ) -> Optional[str]:
 
-    requirement_normalized = normalize_text(
-        requirement
-    )
+    requirement_degree = detect_degree(requirement)
+    candidate_degree = detect_degree(candidate_text)
 
-    candidate_normalized = normalize_text(
-        candidate_text
-    )
+    requirement_field = extract_requirement_field(requirement)
+    candidate_field = detect_field(candidate_text)
 
-    if not requirement_normalized:
-        return None
+    # Related technical qualifications for Computer Science.
+    if requirement_field == "computer_science":
 
-    if not candidate_normalized:
-        return None
+        if candidate_degree == "be":
+            if candidate_field in RELATED_FIELDS["computer_science"]:
+                return "related"
 
-    # --------------------------------------------------------
-    # Direct concept relationships
-    # --------------------------------------------------------
+        if candidate_degree == "bca":
+            return "related"
 
-    related_concepts = EDUCATION_CONCEPTS.get(
-        requirement_normalized,
-        set()
-    )
-
-    for concept in related_concepts:
-
-        concept_normalized = normalize_text(
-            concept
-        )
-
-        if exact_education_match(
-            concept_normalized,
-            candidate_normalized
-        ):
-            return concept
-
-    # --------------------------------------------------------
-    # Special handling for combined programs
-    #
-    # Example:
-    #
-    # CSE_AI&DS
-    #
-    # becomes:
-    #
-    # cse ai and ds
-    #
-    # Therefore it can provide evidence for:
-    #
-    # Computer Science
-    # Artificial Intelligence
-    # Data Science
-    # --------------------------------------------------------
-
-    candidate_words = set(
-        candidate_normalized.split()
-    )
-
-    if "cse" in candidate_words:
-
-        if requirement_normalized == "computer science":
-            return "cse"
-
+    # Related fields for an explicitly technical bachelor's degree.
     if (
-        "ai" in candidate_words
-        or "artificial intelligence" in candidate_normalized
+        requirement_degree in ("btech", "be")
+        and candidate_degree == "bca"
     ):
+        return "related"
 
-        if requirement_normalized == "artificial intelligence":
-            return "ai"
+    # Generic bachelor's-level requirement.
+    normalized_requirement = normalize_text(requirement)
 
-    if (
-        "ds" in candidate_words
-        or "data science" in candidate_normalized
-    ):
-
-        if requirement_normalized == "data science":
-            return "ds"
-
-    # --------------------------------------------------------
-    # Degree aliases
-    # --------------------------------------------------------
-
-    for alias, meanings in DEGREE_ALIASES.items():
-
-        alias_normalized = normalize_text(
-            alias
-        )
-
-        if alias_normalized in candidate_words:
-
-            normalized_meanings = {
-                normalize_text(
-                    meaning
-                )
-                for meaning in meanings
-            }
-
-            if requirement_normalized in normalized_meanings:
-
-                return alias
-
-    # --------------------------------------------------------
-    # Degree-level inference
-    # --------------------------------------------------------
-
-    if requirement_normalized in {
+    generic_bachelor = normalized_requirement in {
         "bachelor",
         "bachelors",
         "bachelor degree",
-        "bachelors degree"
-    }:
+        "bachelors degree",
+        "undergraduate degree",
+    }
 
-        inferred_degree = infer_degree_level(
-            candidate_normalized
-        )
-
-        if inferred_degree == "bachelor":
-            return inferred_degree
+    if generic_bachelor and is_bachelor_degree(candidate_degree):
+        return "related"
 
     return None
 
@@ -461,90 +459,134 @@ def match_education_requirement(
     education_entries: List[Dict]
 ) -> Dict:
 
-    if not requirement:
-
-        return {
-            "requirement": requirement,
-            "status": "unknown",
-            "confidence": 0.0,
-            "evidence": []
-        }
-
-    if not education_entries:
-
-        return {
-            "requirement": requirement,
-            "status": "unknown",
-            "confidence": 0.0,
-            "evidence": []
-        }
-
-    # ========================================================
-    # STEP 1: EXACT MATCH
-    # ========================================================
-
-    for education in education_entries:
-
-        candidate_text = normalize_education_entry(
-            education
-        )
-
-        if not candidate_text:
-            continue
-
-        if exact_education_match(
-            requirement,
-            candidate_text
-        ):
-
-            return {
-                "requirement": requirement,
-                "status": "exact",
-                "confidence": 1.0,
-                "evidence": [
-                    candidate_text
-                ]
-            }
-
-    # ========================================================
-    # STEP 2: RELATED MATCH
-    # ========================================================
-
-    for education in education_entries:
-
-        candidate_text = normalize_education_entry(
-            education
-        )
-
-        if not candidate_text:
-            continue
-
-        related = related_education_match(
-            requirement,
-            candidate_text
-        )
-
-        if related:
-
-            return {
-                "requirement": requirement,
-                "status": "related",
-                "confidence": 0.85,
-                "evidence": [
-                    candidate_text
-                ]
-            }
-
-    # ========================================================
-    # STEP 3: UNKNOWN
-    # ========================================================
-
-    return {
+    base_result = {
         "requirement": requirement,
         "status": "unknown",
         "confidence": 0.0,
         "evidence": []
     }
+
+    if not requirement or not education_entries:
+        return base_result
+
+    requirement_degree = detect_degree(requirement)
+    requirement_field = extract_requirement_field(requirement)
+
+    normalized_requirement = normalize_text(requirement)
+
+    generic_bachelor = normalized_requirement in {
+        "bachelor",
+        "bachelors",
+        "bachelor degree",
+        "bachelors degree",
+        "undergraduate degree",
+    }
+
+    confirmed_unrelated = []
+
+    for education in education_entries:
+
+        candidate_text = normalize_education_entry(education)
+
+        if not candidate_text:
+            continue
+
+        candidate_degree = detect_degree(candidate_text)
+        candidate_field = detect_field(candidate_text)
+
+        evidence = [candidate_text]
+
+        # Generic bachelor's requirement.
+        if generic_bachelor:
+            if is_bachelor_degree(candidate_degree):
+                return {
+                    "requirement": requirement,
+                    "status": "exact",
+                    "confidence": 1.0,
+                    "evidence": evidence
+                }
+
+            continue
+
+        # A qualification with no identifiable degree is insufficient.
+        if not candidate_degree:
+            continue
+
+        # A field-specific requirement.
+        if requirement_field:
+
+            if candidate_field in RELATED_FIELDS.get(
+                requirement_field, {requirement_field}
+            ):
+
+                if (
+                    requirement_degree is None
+                    or candidate_degree == requirement_degree
+                ):
+                    return {
+                        "requirement": requirement,
+                        "status": "exact",
+                        "confidence": 1.0,
+                        "evidence": evidence
+                    }
+
+            related = related_education_match(
+                requirement,
+                candidate_text
+            )
+
+            if related:
+                return {
+                    "requirement": requirement,
+                    "status": "related",
+                    "confidence": 0.85,
+                    "evidence": evidence
+                }
+
+            # A recognized degree in a clearly unrelated field.
+            if candidate_field:
+                confirmed_unrelated.append(candidate_text)
+
+            elif candidate_degree in ("bcom", "ba", "mba"):
+                confirmed_unrelated.append(candidate_text)
+
+            continue
+
+        # Degree-specific requirement without a field.
+        if requirement_degree:
+
+            if candidate_degree == requirement_degree:
+                return {
+                    "requirement": requirement,
+                    "status": "exact",
+                    "confidence": 1.0,
+                    "evidence": evidence
+                }
+
+            related = related_education_match(
+                requirement,
+                candidate_text
+            )
+
+            if related:
+                return {
+                    "requirement": requirement,
+                    "status": "related",
+                    "confidence": 0.85,
+                    "evidence": evidence
+                }
+
+            confirmed_unrelated.append(candidate_text)
+
+    if confirmed_unrelated:
+        return {
+            "requirement": requirement,
+            "status": "not_matched",
+            "confidence": 0.0,
+            "evidence": confirmed_unrelated
+        }
+
+    return base_result
 
 
 # ============================================================
@@ -586,34 +628,30 @@ def match_education(
 
     if isinstance(required_education, str):
         required_education = [required_education]
-      
 
     if not required_education:
-
         return {
             "status": "not_required",
             "matched": [],
+            "not_matched": [],
             "unknown": []
         }
 
     if not resume:
-
         return {
             "status": "unknown",
             "matched": [],
+            "not_matched": [],
             "unknown": required_education
         }
 
-    education_entries = resume.get(
-        "education",
-        []
-    )
+    education_entries = resume.get("education", [])
 
     if not education_entries:
-
         return {
             "status": "unknown",
             "matched": [],
+            "not_matched": [],
             "unknown": required_education
         }
 
@@ -623,32 +661,32 @@ def match_education(
     )
 
     matched = []
+    not_matched = []
     unknown = []
 
     for result in results:
 
-        if result["status"] in [
-            "exact",
-            "related"
-        ]:
+        status = result.get("status")
 
-            matched.append(
-                result
-            )
+        if status in ("exact", "related"):
+            matched.append(result)
+
+        elif status == "not_matched":
+            not_matched.append(result)
 
         else:
-
-            unknown.append(
-                result
-            )
+            unknown.append(result)
 
     if matched:
-        status = "matched"
+        overall_status = "matched"
+    elif not_matched and not unknown:
+        overall_status = "not_matched"
     else:
-        status = "unknown"
+        overall_status = "unknown"
 
     return {
-        "status": status,
+        "status": overall_status,
         "matched": matched,
+        "not_matched": not_matched,
         "unknown": unknown
     }

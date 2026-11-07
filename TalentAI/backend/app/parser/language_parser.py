@@ -1,3 +1,4 @@
+
 import re
 
 
@@ -6,16 +7,11 @@ import re
 # ============================================================
 
 def clean_language_text(text: str) -> str:
-
     if not text:
         return ""
 
     text = text.replace("\r", "\n")
-
-    # Normalize spaces
     text = re.sub(r"[ \t]+", " ", text)
-
-    # Remove excessive blank lines
     text = re.sub(r"\n+", "\n", text)
 
     return text.strip()
@@ -26,7 +22,6 @@ def clean_language_text(text: str) -> str:
 # ============================================================
 
 def extract_language_section(text: str):
-
     if not text:
         return None
 
@@ -36,7 +31,7 @@ def extract_language_section(text: str):
 
 
 # ============================================================
-# KNOWN LANGUAGES
+# KNOWN SPOKEN LANGUAGES
 # ============================================================
 
 KNOWN_LANGUAGES = [
@@ -62,7 +57,7 @@ KNOWN_LANGUAGES = [
     "Arabic",
     "Chinese",
     "Japanese",
-    "Korean"
+    "Korean",
 ]
 
 
@@ -81,7 +76,6 @@ def extract_language_proficiency(text: str):
     ]
 
     for pattern in proficiency_patterns:
-
         match = re.search(
             pattern,
             text.strip(),
@@ -89,7 +83,6 @@ def extract_language_proficiency(text: str):
         )
 
         if match:
-
             proficiency = match.group(1).strip()
 
             if proficiency:
@@ -109,14 +102,13 @@ def extract_language_name(text: str):
 
     text = text.strip()
 
-    # Remove bullets
     text = re.sub(
         r"^[➢•\-*]+\s*",
         "",
         text
     ).strip()
 
-    # Remove optional proficiency
+    # Remove proficiency information.
     text = re.sub(
         r"\s*[-–—:]\s*.+$",
         "",
@@ -130,19 +122,11 @@ def extract_language_name(text: str):
     ).strip()
 
     for language in KNOWN_LANGUAGES:
-
-        if re.fullmatch(
-            re.escape(language),
-            text,
-            re.IGNORECASE
-        ):
+        if text.casefold() == language.casefold():
             return language
 
-    # If it is not in the known-language list,
-    # return the cleaned text rather than losing it.
-    if text:
-        return text
-
+    # Strict classification:
+    # Unknown terms must not be treated as spoken languages.
     return None
 
 
@@ -163,30 +147,16 @@ def extract_language_entries(text: str):
         if line.strip()
     ]
 
-    if not lines:
-        return []
-
     entries = []
+    seen = set()
 
     for line in lines:
 
-        # ----------------------------------------------------
-        # Handle comma-separated languages
-        # Example:
-        # English, Hindi, Telugu
-        # ----------------------------------------------------
-
-        if "," in line:
-
-            parts = [
-                part.strip()
-                for part in line.split(",")
-                if part.strip()
-            ]
-
-        else:
-
-            parts = [line]
+        parts = [
+            part.strip()
+            for part in line.split(",")
+            if part.strip()
+        ]
 
         for part in parts:
 
@@ -195,18 +165,22 @@ def extract_language_entries(text: str):
             if not language:
                 continue
 
+            normalized = language.casefold()
+
+            if normalized in seen:
+                continue
+
             proficiency = extract_language_proficiency(part)
 
             entry = {
                 "language": language
             }
 
-            # Proficiency is optional.
-            # Only store it when explicitly mentioned.
             if proficiency:
                 entry["proficiency"] = proficiency
 
             entries.append(entry)
+            seen.add(normalized)
 
     return entries
 

@@ -1,3 +1,4 @@
+
 import fitz
 
 
@@ -10,17 +11,19 @@ def extract_text_from_pdf(pdf_path: str) -> str:
 
     Returns:
         str: Extracted text.
+
+    Raises:
+        ValueError: If the PDF is invalid or cannot be opened.
     """
 
-    text = ""
+    try:
+        with fitz.open(pdf_path) as document:
+            text_parts = []
 
-    document = fitz.open(pdf_path)
+            for page in document:
+                text_parts.append(page.get_text())
 
-    for page in document:
-        text += page.get_text()
+        return "\n".join(text_parts).strip()
 
-    document.close()
-
-    return text.strip()
-
-    
+    except Exception as exc:
+        raise ValueError("Unable to read or process the PDF file.") from exc

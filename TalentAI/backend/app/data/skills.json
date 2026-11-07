@@ -1,66 +1,78 @@
+
 {
     "Programming Languages": [
-        "Python",
-        "Java",
-        "JavaScript",
-        "C",
-        "C++",
-        "C#",
-        "Go",
-        "Rust",
-        "PHP",
-        "TypeScript"
+        "Python", "Java", "JavaScript", "C", "C++", "C#",
+        "Go", "Rust", "PHP", "TypeScript", "Ruby", "Swift",
+        "Kotlin", "R", "MATLAB", "Scala", "Dart", "Perl"
     ],
-
     "Web Development": [
-        "HTML",
-        "CSS",
-        "Bootstrap",
-        "React",
-        "Angular",
-        "Vue",
-        "FastAPI",
-        "Flask",
-        "Django",
-        "Node.js"
+        "HTML", "CSS", "Bootstrap", "React", "Angular", "Vue",
+        "FastAPI", "Flask", "Django", "Node.js", "Express.js",
+        "Next.js", "Spring Boot", "ASP.NET", "jQuery"
     ],
-
     "Databases": [
-        "MySQL",
-        "PostgreSQL",
-        "MongoDB",
-        "SQLite",
-        "Oracle",
-        "Redis"
+        "MySQL", "PostgreSQL", "MongoDB", "SQLite", "Oracle",
+        "Redis", "Microsoft SQL Server", "MariaDB", "Cassandra",
+        "Elasticsearch"
     ],
-
     "Data Science": [
-        "Pandas",
-        "NumPy",
-        "Matplotlib",
-        "Seaborn",
-        "Scikit-learn"
+        "Pandas", "NumPy", "Matplotlib", "Seaborn",
+        "Scikit-learn", "Data Analysis", "Data Visualization",
+        "Statistics", "Power BI", "Tableau", "Excel"
     ],
-
     "Machine Learning": [
-        "TensorFlow",
-        "PyTorch",
-        "Keras",
-        "XGBoost",
-        "LightGBM"
+        "TensorFlow", "PyTorch", "Keras", "XGBoost",
+        "LightGBM", "Machine Learning", "Deep Learning",
+        "Natural Language Processing", "Computer Vision",
+        "Generative AI", "Large Language Models"
     ],
-
     "Cloud": [
-        "AWS",
-        "Azure",
-        "Google Cloud"
+        "AWS", "Azure", "Google Cloud", "Cloud Computing",
+        "Amazon EC2", "Amazon S3", "Azure DevOps"
     ],
-
     "DevOps": [
-        "Docker",
-        "Kubernetes",
-        "Git",
-        "GitHub",
-        "Jenkins"
+        "Docker", "Kubernetes", "Git", "GitHub", "Jenkins",
+        "GitLab CI/CD", "Terraform", "Linux", "CI/CD"
+    ],
+    "Tools and Software": [
+        "Microsoft Office", "Microsoft Word", "Microsoft Excel",
+        "Microsoft PowerPoint", "Google Workspace", "Jira",
+        "Confluence", "Figma", "Canva", "Adobe Photoshop",
+        "Adobe Illustrator", "SAP", "Salesforce", "QuickBooks",
+        "Tally"
+    ],
+    "Business and Management": [
+        "Business Analysis", "Project Management",
+        "Product Management", "Strategic Planning",
+        "Business Development", "Operations Management",
+        "Risk Management", "Process Improvement",
+        "Stakeholder Management"
+    ],
+    "Finance and Accounting": [
+        "Financial Analysis", "Financial Reporting",
+        "Bookkeeping", "Budgeting", "Auditing",
+        "Taxation", "Accounts Payable", "Accounts Receivable",
+        "Financial Modeling"
+    ],
+    "Marketing and Sales": [
+        "Digital Marketing", "SEO", "SEM", "Content Marketing",
+        "Social Media Marketing", "Market Research",
+        "Lead Generation", "Sales Strategy", "CRM",
+        "Email Marketing"
+    ],
+    "Communication": [
+        "Written Communication", "Verbal Communication",
+        "Public Speaking", "Presentation Skills",
+        "Business Communication", "Active Listening"
+    ],
+    "Leadership": [
+        "Team Leadership", "Team Management",
+        "People Management", "Decision Making",
+        "Conflict Resolution", "Mentoring", "Delegation"
+    ],
+    "Interpersonal": [
+        "Teamwork", "Collaboration", "Adaptability",
+        "Problem Solving", "Critical Thinking",
+        "Time Management", "Creativity", "Emotional Intelligence"
     ]
 }

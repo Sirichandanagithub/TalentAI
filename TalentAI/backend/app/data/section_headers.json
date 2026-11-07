@@ -1,22 +1,25 @@
+﻿
 {
     "personal": [
         "contact",
         "contact information",
         "personal information",
-        "personal details"
+        "personal details",
+        "personal profile"
     ],
-
     "summary": [
         "summary",
         "professional summary",
         "profile",
+        "professional profile",
         "objective",
         "career objective",
         "career summary",
         "executive summary",
-        "about me"
+        "about me",
+        "profile summary",
+        "personal statement"
     ],
-
     "experience": [
         "experience",
         "work experience",
@@ -25,9 +28,14 @@
         "career history",
         "internships",
         "internship",
-        "work history"
+        "work history",
+        "employment",
+        "professional background",
+        "relevant experience",
+        "industry experience",
+        "freelance experience",
+        "volunteer experience"
     ],
-
     "education": [
         "education",
         "academic background",
@@ -35,29 +43,44 @@
         "qualifications",
         "qualification",
         "education details",
-        "educational qualifications"
+        "educational qualifications",
+        "academic qualifications",
+        "educational background",
+        "academic history"
     ],
-
     "projects": [
         "projects",
         "project",
         "academic projects",
         "personal projects",
         "key projects",
-        "professional projects"
+        "professional projects",
+        "selected projects",
+        "research projects",
+        "project experience"
     ],
-
     "skills": [
         "skills",
+        "skills summary",
+        "skill summary",
         "technical skills",
-        "technical expertise",
+        "technical skill",
+        "professional skills",
+        "soft skills",
+        "hard skills",
+        "core skills",
         "core competencies",
         "competencies",
         "technologies",
         "expertise",
-        "key skills"
+        "key skills",
+        "areas of expertise",
+        "areas of strength",
+        "professional competencies",
+        "key competencies",
+        "functional skills",
+        "interpersonal skills"
     ],
-
     "certifications": [
         "certifications",
         "certification",
@@ -65,9 +88,12 @@
         "license",
         "courses",
         "training",
-        "professional certifications"
+        "professional certifications",
+        "licenses and certifications",
+        "certificates",
+        "professional development",
+        "training and certifications"
     ],
-
     "achievements": [
         "achievements",
         "achievement",
@@ -80,33 +106,38 @@
         "recognition",
         "extra curricular activities",
         "extracurricular activities",
-        "co curricular activities"
+        "co curricular activities",
+        "career highlights",
+        "key achievements",
+        "notable achievements"
     ],
-
     "languages": [
-        "languages",
         "language proficiency"
     ],
-
     "interests": [
         "interests",
         "hobbies",
-        "activities"
+        "activities",
+        "personal interests",
+        "areas of interest"
     ],
-
     "publications": [
         "publications",
         "research publications",
-        "papers"
+        "papers",
+        "published papers",
+        "research papers"
     ],
-
     "volunteering": [
         "volunteering",
         "volunteer experience",
-        "community service"
+        "community service",
+        "social work",
+        "volunteer activities"
     ],
-
     "references": [
-        "references"
+        "references",
+        "professional references",
+        "referees"
     ]
 }

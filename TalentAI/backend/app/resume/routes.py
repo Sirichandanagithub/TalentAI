@@ -14,7 +14,10 @@ from app.auth.dependencies import get_current_user
 from app.auth.models import User
 from app.database.session import get_db
 from app.resume.models import Resume
-from app.resume.schema import ResumeResponse
+from app.resume.schema import (
+    ResumeResponse,
+    ParsedResumeResponse,
+)   
 from app.resume.services import save_resume
 
 router = APIRouter(
@@ -46,6 +49,11 @@ async def upload_resume(
 
 
 @router.get(
+    "/{resume_id}/parsed",
+    response_model=ParsedResumeResponse,
+)
+
+@router.get(
     "/{resume_id}",
     response_model=ResumeResponse,
 )
@@ -55,7 +63,8 @@ def get_resume(
     current_user: User = Depends(get_current_user),
 ):
     """
-    Retrieve a resume only if it belongs to the authenticated user.
+    Retrieve resume metadata only if it belongs
+    to the authenticated user.
     """
 
     resume = (
@@ -78,7 +87,42 @@ def get_resume(
         "user_id": resume.user_id,
         "original_filename": resume.file_name,
         "stored_filename": Path(resume.file_path).name,
-        "file_path": resume.file_path,
         "uploaded_at": resume.uploaded_at,
+    }
 
-    }   
+def get_parsed_resume(
+    resume_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Retrieve parsed resume data only if it belongs
+    to the authenticated user.
+    """
+
+    resume = (
+        db.query(Resume)
+        .filter(
+            Resume.id == resume_id,
+            Resume.user_id == current_user.id,
+        )
+        .first()
+    )
+
+    if resume is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Resume not found",
+        )
+
+    if not resume.parsed_data:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Parsed resume data not found",
+        )
+
+    return {
+        "id": resume.id,
+        "user_id": resume.user_id,
+        "parsed_data": resume.parsed_data,
+    }

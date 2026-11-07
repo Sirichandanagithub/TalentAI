@@ -6,20 +6,13 @@ import re
 # ============================================================
 
 def clean_experience_text(text: str) -> str:
-
     if not text:
         return ""
 
     text = text.replace("\r", "\n")
-
-    # Normalize bullet characters
     text = text.replace("➢", "\n➢")
     text = text.replace("•", "\n•")
-
-    # Fix common PDF extraction spacing problems
     text = re.sub(r"[ \t]+", " ", text)
-
-    # Remove excessive blank lines
     text = re.sub(r"\n+", "\n", text)
 
     return text.strip()
@@ -30,569 +23,177 @@ def clean_experience_text(text: str) -> str:
 # ============================================================
 
 def extract_experience_section(text: str):
-
     if not text:
         return None
 
     text = clean_experience_text(text)
+    lines = text.splitlines()
 
-    return text if text else None
+    start_index = None
 
-
-# ============================================================
-# JOB TITLE DETECTION
-# ============================================================
-
-def is_job_title(line: str) -> bool:
-
-    if not line:
-        return False
-
-    # Remove bullets
-    clean_line = re.sub(
-        r"^[➢•\-]+\s*",
-        "",
-        line
-    ).strip()
-
-    if not clean_line:
-        return False
-
-    lower_line = clean_line.lower()
-
-    title_keywords = [
-        "developer",
-        "engineer",
-        "intern",
-        "analyst",
-        "manager",
-        "designer",
-        "consultant",
-        "administrator",
-        "architect",
-        "scientist",
-        "specialist",
-        "associate",
-        "executive",
-        "lead",
-        "trainee",
-        "researcher",
-        "director",
-        "coordinator",
-        "officer",
-        "accountant",
-        "tester",
-        "qa",
-        "technician"
-    ]
-
-    # Must contain a job-title keyword
-    if not any(
-        keyword in lower_line
-        for keyword in title_keywords
-    ):
-        return False
-
-    # Avoid treating long sentences as job titles
-    if len(clean_line.split()) > 8:
-        return False
-
-    # Avoid description-like sentences
-    sentence_patterns = [
-        r"^as\s+",
-        r"^i\s+",
-        r"^gained\s+",
-        r"^worked\s+",
-        r"^developed\s+",
-        r"^utilized\s+",
-        r"^responsible\s+for",
-        r"^contributed\s+",
-        r"^learned\s+"
-    ]
-
-    for pattern in sentence_patterns:
-
+    for index, line in enumerate(lines):
         if re.match(
-            pattern,
-            lower_line
-        ):
-            return False
-
-    return True
-
-
-# ============================================================
-# JOB TITLE
-# ============================================================
-
-def extract_job_title(text: str):
-
-    if not text:
-        return None
-
-    lines = [
-        line.strip()
-        for line in text.splitlines()
-        if line.strip()
-    ]
-
-    if not lines:
-        return None
-
-    for line in lines:
-
-        clean_line = re.sub(
-            r"^[➢•\-]+\s*",
-            "",
-            line
-        ).strip()
-
-        if is_job_title(clean_line):
-
-            return clean_line
-
-    return lines[0]
-
-
-# ============================================================
-# COMPANY
-# ============================================================
-# ============================================================
-# COMPANY
-# ============================================================
-
-def extract_company(text: str):
-
-    if not text:
-        return None
-
-    lines = [
-        line.strip()
-        for line in text.splitlines()
-        if line.strip()
-    ]
-
-    if not lines:
-        return None
-
-    # --------------------------------------------------------
-    # Case 1:
-    # Organization: Bharat Dynamics Limited ...
-    # --------------------------------------------------------
-
-    for line in lines:
-
-        clean_line = re.sub(
-            r"^[➢•\-]+\s*",
-            "",
-            line
-        ).strip()
-
-        organization_match = re.match(
-            r"^(?:Organization|Company)\s*:\s*(.+)$",
-            clean_line,
-            re.IGNORECASE
-        )
-
-        if organization_match:
-
-            company = organization_match.group(1).strip()
-
-            # Remove date information from company
-            company = re.sub(
-                r"\s*\[\s*"
-                r"(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|"
-                r"May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|"
-                r"Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)"
-                r"\s+(?:19|20)\d{2}"
-                r"\s*\]",
-                "",
-                company,
-                flags=re.IGNORECASE
-            )
-
-            return company.strip()
-
-    # --------------------------------------------------------
-    # Case 2:
-    # Data Analytics Intern
-    # Renu Sharma Healthcare and Education Foundation – Remote
-    # [April 2025]
-    # --------------------------------------------------------
-
-    if len(lines) >= 2:
-
-        company_line = lines[1]
-
-        company_line = re.sub(
-            r"^[➢•\-]+\s*",
-            "",
-            company_line
-        ).strip()
-
-        # Remove "Organization:" if present
-        company_line = re.sub(
-            r"^(Organization|Company)\s*:\s*",
-            "",
-            company_line,
-            flags=re.IGNORECASE
-        )
-
-        # Remove location
-        company_line = re.sub(
-            r"\s*[-–—]\s*"
-            r"(Remote|Hyderabad|Bangalore|Bengaluru|"
-            r"Chennai|Mumbai|Delhi|Pune|Kolkata|"
-            r"India|Telangana|Andhra Pradesh|"
-            r"Maharashtra|Karnataka)\s*$",
-            "",
-            company_line,
-            flags=re.IGNORECASE
-        )
-
-        # Remove date in brackets
-        company_line = re.sub(
-            r"\s*\[\s*.*?\s*\]\s*$",
-            "",
-            company_line
-        )
-
-        return company_line.strip()
-
-    return None
-# ============================================================
-# LOCATION
-# ============================================================
-
-def extract_experience_location(text: str):
-
-    if not text:
-        return None
-
-    locations = [
-        "Hyderabad",
-        "Bangalore",
-        "Bengaluru",
-        "Chennai",
-        "Mumbai",
-        "Delhi",
-        "Pune",
-        "Kolkata",
-        "Remote",
-        "India",
-        "Telangana",
-        "Andhra Pradesh",
-        "Maharashtra",
-        "Karnataka"
-    ]
-
-    for location in locations:
-
-        if re.search(
-            rf"\b{re.escape(location)}\b",
-            text,
+            r"^\s*(?:professional\s+)?experience\s*:?\s*$",
+            line,
             re.IGNORECASE
         ):
+            start_index = index + 1
+            break
 
-            return location
+    if start_index is None:
+        return text.strip() or None
 
-    return None
+    section_headers = {
+        "education", "projects", "technical skills",
+        "skills", "certifications", "achievements",
+        "languages", "publications"
+    }
+
+    end_index = len(lines)
+
+    for index in range(start_index, len(lines)):
+        if lines[index].strip().lower().rstrip(":") in section_headers:
+            end_index = index
+            break
+
+    result = "\n".join(lines[start_index:end_index]).strip()
+    return result or None
 
 
 # ============================================================
 # DATE EXTRACTION
 # ============================================================
 
+MONTH_PATTERN = (
+    r"Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|"
+    r"May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|"
+    r"Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?"
+)
+
+
 def extract_experience_dates(text: str):
-    """
-    Extract employment dates from resume experience text.
-
-    Supported formats include:
-
-    Numeric:
-        03/2025
-        3/2025
-        03-2025
-        3-2025
-
-    Month + year:
-        March 2025
-        Mar 2025
-        March, 2025
-        Mar, 2025
-
-    Year only:
-        2025
-
-    Ranges:
-        03/2023 - 08/2025
-        03-2023 - 08-2025
-        March 2023 - August 2025
-        2023 - 2025
-
-    Current ranges:
-        03/2023 - Present
-        March 2023 - Current
-        2023 - Now
-        2022 - Till Date
-        2021 - Ongoing
-
-    Also supports date ranges wrapped in brackets:
-        [03/2025-present]
-        [March 2023 - Present]
-        [2023 - 2025]
-    """
-
     if not text:
         return None
 
-    # --------------------------------------------------------
-    # Normalize text
-    # --------------------------------------------------------
+    text = re.sub(r"[\[\]()]", " ", str(text)).strip()
 
-    text = str(text).strip()
-
-    if not text:
-        return None
-
-    # --------------------------------------------------------
-    # Month names
-    # --------------------------------------------------------
-
-    month_pattern = (
-        r"(?:"
-        r"Jan(?:uary)?|"
-        r"Feb(?:ruary)?|"
-        r"Mar(?:ch)?|"
-        r"Apr(?:il)?|"
-        r"May|"
-        r"Jun(?:e)?|"
-        r"Jul(?:y)?|"
-        r"Aug(?:ust)?|"
-        r"Sep(?:tember)?|"
-        r"Oct(?:ober)?|"
-        r"Nov(?:ember)?|"
-        r"Dec(?:ember)?"
-        r")"
+    # Month-to-month range within the same year:
+    # April-June 2023
+    match = re.search(
+        rf"\b({MONTH_PATTERN})\s*[-–—]\s*"
+        rf"({MONTH_PATTERN})\s*,?\s*((?:19|20)\d{{2}})\b",
+        text,
+        re.IGNORECASE
     )
 
-    # --------------------------------------------------------
-    # Current / ongoing keywords
-    # --------------------------------------------------------
+    if match:
+        year = match.group(3)
+        return {
+            "start": f"{match.group(1)} {year}",
+            "end": f"{match.group(2)} {year}",
+            "current": False
+        }
 
-    current_pattern = (
-        r"(?:"
-        r"Present|"
-        r"Current|"
-        r"Currently|"
-        r"Till\s+Date|"
-        r"To\s+Date|"
-        r"Until\s+Now|"
-        r"Now|"
-        r"Ongoing|"
-        r"On-going|"
-        r"Till\s+Now|"
-        r"Up\s+to\s+Now"
-        r")"
+    # Month/year range:
+    # March 2023 - August 2024
+    match = re.search(
+        rf"\b({MONTH_PATTERN})\s*,?\s*((?:19|20)\d{{2}})"
+        rf"\s*[-–—]\s*"
+        rf"({MONTH_PATTERN})\s*,?\s*((?:19|20)\d{{2}})\b",
+        text,
+        re.IGNORECASE
     )
 
-    # --------------------------------------------------------
-    # Date components
-    # --------------------------------------------------------
+    if match:
+        return {
+            "start": f"{match.group(1)} {match.group(2)}",
+            "end": f"{match.group(3)} {match.group(4)}",
+            "current": False
+        }
 
-    numeric_month_year = (
-        r"(?:"
-        r"0?[1-9]|"
-        r"1[0-2]"
-        r")"
-        r"\s*[/.-]\s*"
-        r"(?:19|20)\d{2}"
-    )
-
-    named_month_year = (
-        rf"{month_pattern}"
-        r"\s*,?\s*"
-        r"(?:19|20)\d{2}"
-    )
-
-    year_only = (
-        r"(?:19|20)\d{2}"
-    )
-
-    date_component = (
-        rf"(?:"
-        rf"{numeric_month_year}|"
-        rf"{named_month_year}|"
-        rf"{year_only}"
-        rf")"
-    )
-
-    # --------------------------------------------------------
-    # Remove surrounding brackets for easier matching
-    #
-    # Example:
-    #   [03/2025-present]
-    # becomes:
-    #   03/2025-present
-    # --------------------------------------------------------
-
-    searchable_text = re.sub(
-        r"[\[\]\(\)]",
-        " ",
+    # Year range:
+    # 2022 - 2024
+    match = re.search(
+        r"\b((?:19|20)\d{2})\s*[-–—]\s*((?:19|20)\d{2})\b",
         text
     )
 
-    # --------------------------------------------------------
-    # 1. DATE RANGE -> CURRENT
-    #
-    # Examples:
-    #   03/2025 - Present
-    #   03-2025 - Current
-    #   March 2025 - Present
-    #   2023 - Now
-    #   2022 - Ongoing
-    # --------------------------------------------------------
-
-    current_date_range_pattern = re.search(
-        rf"({date_component})"
-        rf"\s*"
-        rf"(?:[-–—]|to|until|through)"
-        rf"\s*"
-        rf"({current_pattern})",
-        searchable_text,
-        re.IGNORECASE
-    )
-
-    if current_date_range_pattern:
-
-        start = current_date_range_pattern.group(1).strip()
-        end = current_date_range_pattern.group(2).strip()
-
+    if match:
         return {
-            "start": start,
-            "end": end,
-            "current": True
-        }
-
-    # --------------------------------------------------------
-    # 2. DATE RANGE -> EXPLICIT END DATE
-    #
-    # Examples:
-    #   03/2023 - 08/2025
-    #   03-2023 - 08-2025
-    #   March 2023 - August 2025
-    #   2023 - 2025
-    #   Jan 2022 to Dec 2024
-    # --------------------------------------------------------
-
-    date_range_pattern = re.search(
-        rf"({date_component})"
-        rf"\s*"
-        rf"(?:[-–—]|to|through)"
-        rf"\s*"
-        rf"({date_component})",
-        searchable_text,
-        re.IGNORECASE
-    )
-
-    if date_range_pattern:
-
-        start = date_range_pattern.group(1).strip()
-        end = date_range_pattern.group(2).strip()
-
-        return {
-            "start": start,
-            "end": end,
+            "start": match.group(1),
+            "end": match.group(2),
             "current": False
         }
 
-    # --------------------------------------------------------
-    # 3. SINCE / FROM DATE
-    #
-    # Examples:
-    #   Since 2022
-    #   Since March 2023
-    #   From 2021
-    #   From March 2023
-    # --------------------------------------------------------
-
-    since_pattern = re.search(
-        rf"\b(?:Since|From)\s+"
-        rf"({date_component})\b",
-        searchable_text,
+    # Current employment:
+    match = re.search(
+        rf"\b({MONTH_PATTERN}\s*,?\s*(?:19|20)\d{{2}}|"
+        rf"(?:19|20)\d{{2}})"
+        r"\s*[-–—]\s*"
+        r"(Present|Current|Now|Ongoing|Till Date)",
+        text,
         re.IGNORECASE
     )
 
-    if since_pattern:
-
-        start = since_pattern.group(1).strip()
-
+    if match:
         return {
-            "start": start,
-            "end": "Present",
+            "start": match.group(1),
+            "end": match.group(2),
             "current": True
         }
 
-    # --------------------------------------------------------
-    # 4. SINGLE DATE
-    #
-    # Examples:
-    #   March 2025
-    #   Mar 2025
-    #   03/2025
-    #   03-2025
-    # --------------------------------------------------------
-
-    single_date_pattern = re.search(
-        rf"({named_month_year}|{numeric_month_year})",
-        searchable_text,
+    # Single month and year
+    match = re.search(
+        rf"\b({MONTH_PATTERN})\s*,?\s*((?:19|20)\d{{2}})\b",
+        text,
         re.IGNORECASE
     )
 
-    if single_date_pattern:
-
-        start = single_date_pattern.group(1).strip()
-
+    if match:
         return {
-            "start": start,
+            "start": f"{match.group(1)} {match.group(2)}",
             "end": None,
             "current": False
         }
 
-    # --------------------------------------------------------
-    # 5. SINGLE YEAR
-    #
-    # Example:
-    #   2025
-    # --------------------------------------------------------
+    # Single year
+    match = re.search(r"\b((?:19|20)\d{2})\b", text)
 
-    year_pattern = re.search(
-        rf"\b({year_only})\b",
-        searchable_text
-    )
-
-    if year_pattern:
-
+    if match:
         return {
-            "start": year_pattern.group(1),
+            "start": match.group(1),
             "end": None,
             "current": False
         }
-
-    # --------------------------------------------------------
-    # Nothing recognized
-    # --------------------------------------------------------
 
     return None
+
+
 # ============================================================
-# EXPERIENCE ENTRY EXTRACTION
-# ============================================================
-# ============================================================
-# DESCRIPTION
+# COMPANY AND LOCATION
 # ============================================================
 
-def extract_experience_description(text: str):
+LOCATION_PATTERN = (
+    r"Remote|Hyderabad|Bangalore|Bengaluru|Chennai|Mumbai|"
+    r"Delhi|Pune|Kolkata|India|Telangana|Andhra Pradesh|"
+    r"Maharashtra|Karnataka|Dubai|UAE"
+)
 
+
+def extract_experience_location(text: str):
+    if not text:
+        return None
+
+    match = re.search(
+        rf"\b({LOCATION_PATTERN})\b",
+        text,
+        re.IGNORECASE
+    )
+
+    return match.group(1) if match else None
+
+
+def extract_company(text: str):
     if not text:
         return None
 
@@ -605,83 +206,167 @@ def extract_experience_description(text: str):
     if not lines:
         return None
 
+    first_line = re.sub(r"^[➢•\-]+\s*", "", lines[0]).strip()
+
+    # Format: Job Title @ Company
+    if "@" in first_line:
+        return first_line.split("@", 1)[1].strip() or None
+
+    # Format: Company, Location [Dates]
+    company = re.sub(r"\[[^\]]*\]", "", first_line)
+    company = re.sub(
+        rf",?\s*\b(?:{LOCATION_PATTERN})\b.*$",
+        "",
+        company,
+        flags=re.IGNORECASE
+    )
+
+    company = company.strip(" ,.-:")
+    return company or None
+
+
+# ============================================================
+# JOB TITLE
+# ============================================================
+
+JOB_TITLE_KEYWORDS = [
+    "developer", "engineer", "intern", "analyst",
+    "manager", "designer", "consultant",
+    "administrator", "architect", "scientist",
+    "specialist", "associate", "executive",
+    "trainee", "researcher", "tester", "technician"
+]
+
+
+def is_job_title(line: str) -> bool:
+    if not line:
+        return False
+
+    line = re.sub(r"^[➢•\-]+\s*", "", line).strip()
+
+    if len(line.split()) > 8:
+        return False
+
+    return any(
+        keyword in line.casefold()
+        for keyword in JOB_TITLE_KEYWORDS
+    )
+
+
+def extract_job_title(text: str):
+    if not text:
+        return None
+
+    lines = [
+        line.strip()
+        for line in text.splitlines()
+        if line.strip()
+    ]
+
+    for line in lines:
+        clean_line = re.sub(r"^[➢•\-]+\s*", "", line).strip()
+
+        if is_job_title(clean_line):
+            return clean_line.split("@", 1)[0].strip()
+
+    # Do not assume the company name is the job title.
+    return None
+
+
+# ============================================================
+# TECHNOLOGIES AND SKILLS
+# ============================================================
+
+def extract_experience_technologies(text: str):
+    if not text:
+        return []
+
+    technologies = []
+
+    for line in text.splitlines():
+        match = re.match(
+            r"^\s*(?:Tools?|Tech|Technologies|Technical Skills)\s*:\s*(.+)$",
+            line,
+            re.IGNORECASE
+        )
+
+        if match:
+            values = re.split(r"[,;|]", match.group(1))
+
+            for value in values:
+                value = value.strip(" .")
+
+                if value and value.casefold() not in {
+                    item.casefold() for item in technologies
+                }:
+                    technologies.append(value)
+
+    return technologies
+
+
+# ============================================================
+# DESCRIPTION
+# ============================================================
+
+# ============================================================
+# DESCRIPTION
+# ============================================================
+
+def extract_experience_description(text: str):
+    if not text:
+        return None
+
     description_lines = []
 
+    lines = text.splitlines()
+
     for index, line in enumerate(lines):
+        clean_line = re.sub(
+            r"^[➢•\-]+\s*",
+            "",
+            line
+        ).strip()
 
-        # ----------------------------------------------------
-        # Skip job title
-        # ----------------------------------------------------
+        if not clean_line:
+            continue
 
+        # Skip the first line (company, location and dates).
         if index == 0:
             continue
 
-        # ----------------------------------------------------
-        # Skip company / organization line
-        # ----------------------------------------------------
-
-        if index == 1:
+        # Skip date-only lines.
+        if (
+            extract_experience_dates(clean_line)
+            and len(clean_line.split()) <= 5
+        ):
             continue
 
-        # ----------------------------------------------------
-        # Skip date-only lines
-        # ----------------------------------------------------
-
-        if re.fullmatch(
-            r"\[\s*("
-            r"(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|"
-            r"May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|"
-            r"Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)"
-            r"\s+)?"
-            r"(?:19|20)\d{2}"
-            r"\s*\]",
-            line,
+        # Skip tools and skills metadata.
+        if re.match(
+            r"^(?:Tools?|Tech|Technologies|Technical Skills|Skills)\s*:",
+            clean_line,
             re.IGNORECASE
         ):
             continue
 
-        # ----------------------------------------------------
-        # Skip lines containing only a date
-        # ----------------------------------------------------
-
-        if re.fullmatch(
-            r"("
-            r"(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|"
-            r"May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|"
-            r"Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)"
-            r"\s+)?"
-            r"(?:19|20)\d{2}",
-            line,
-            re.IGNORECASE
-        ):
-            continue
-
-        # ----------------------------------------------------
-        # Skip current employment date markers
-        # ----------------------------------------------------
-
-        if re.fullmatch(
-            r"(?:Present|Current|Currently|Till\s+Date|"
-            r"To\s+Date|Until\s+Now|Now)",
-            line,
-            re.IGNORECASE
-        ):
-            continue
-
-        description_lines.append(
-            line
-        )
+        description_lines.append(clean_line)
 
     if not description_lines:
         return None
 
-    return " ".join(
-        description_lines
-    )
+    # Join lines with spaces and normalize whitespace.
+    description = " ".join(description_lines)
 
+    description = re.sub(r"\s+", " ", description).strip()
+
+    return description
+
+
+# ============================================================
+# ENTRY EXTRACTION
+# ============================================================
 
 def extract_experience_entries(text: str):
-
     if not text:
         return []
 
@@ -697,42 +382,20 @@ def extract_experience_entries(text: str):
         return []
 
     entries = []
-
     current_entry = []
 
     for line in lines:
+        clean_line = re.sub(r"^[➢•\-]+\s*", "", line).strip()
 
-        clean_line = re.sub(
-            r"^[➢•\-]+\s*",
-            "",
-            line
-        ).strip()
-
-        # ----------------------------------------------------
-        # Detect a new job title
-        # ----------------------------------------------------
-
-        if (
-            is_job_title(clean_line)
-            and current_entry
-        ):
-
-            entries.append(
-                "\n".join(current_entry)
-            )
-
+        # Start a new entry only when a clear job title appears.
+        if is_job_title(clean_line) and current_entry:
+            entries.append("\n".join(current_entry))
             current_entry = []
 
-        current_entry.append(
-            line
-        )
+        current_entry.append(line)
 
-    # Add final entry
     if current_entry:
-
-        entries.append(
-            "\n".join(current_entry)
-        )
+        entries.append("\n".join(current_entry))
 
     return entries
 
@@ -742,52 +405,22 @@ def extract_experience_entries(text: str):
 # ============================================================
 
 def parse_experience(text: str):
-
-    section = extract_experience_section(
-        text
-    )
+    section = extract_experience_section(text)
 
     if not section:
         return []
 
-    raw_entries = extract_experience_entries(
-        section
-    )
+    entries = extract_experience_entries(section)
 
-    parsed_entries = []
-
-    for entry in raw_entries:
-
-        parsed_entries.append(
-            {
-                "raw_text": entry,
-
-                "job_title": extract_job_title(
-                    entry
-                ),
-
-                "company": extract_company(
-                    entry
-                ),
-
-                "location":
-                    extract_experience_location(
-                        entry
-                    ),
-
-                "dates":
-                    extract_experience_dates(
-                        entry
-                    ),
-
-                "description":
-                    extract_experience_description(
-                        entry
-                    )
-            }
-        )
-
-    return parsed_entries
-
-
-
+    return [
+        {
+            "raw_text": entry,
+            "job_title": extract_job_title(entry),
+            "company": extract_company(entry),
+            "location": extract_experience_location(entry),
+            "dates": extract_experience_dates(entry),
+            "technologies": extract_experience_technologies(entry),
+            "description": extract_experience_description(entry),
+        }
+        for entry in entries
+    ]

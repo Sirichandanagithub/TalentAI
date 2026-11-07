@@ -1,119 +1,111 @@
+
 import json
+import re
 from pathlib import Path
 
 
-DATA_DIR = (
-    Path(__file__).resolve().parent.parent / "data"
-)
-
+DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 SECTION_HEADERS_FILE = DATA_DIR / "section_headers.json"
 
 
 def load_section_headers():
-    """
-    Load supported section headers.
-    """
-
-    with open(
-        SECTION_HEADERS_FILE,
-        "r",
-        encoding="utf-8",
-    ) as file:
-
+    with open(SECTION_HEADERS_FILE, "r", encoding="utf-8-sig") as file:
         return json.load(file)
 
-def find_section_headers(text: str):
-    """
-    Detect all section headers and return their positions.
 
-    Duplicate section headers are ignored so that the same
-    section does not overwrite itself during extraction.
+def normalize_header(text: str) -> str:
     """
+    Normalize section headings for reliable matching.
+    """
+    if not text:
+        return ""
+
+    text = text.strip().lower()
+
+    # Remove PDF bullets and decorative symbols.
+    text = re.sub(r"^[\W_]+", "", text, flags=re.UNICODE)
+
+    # Remove trailing punctuation and bullets.
+    text = re.sub(r"[\W_]+$", "", text, flags=re.UNICODE)
+
+    # Normalize internal whitespace.
+    text = re.sub(r"\s+", " ", text)
+
+    return text.strip()
+
+
+def find_section_headers(text: str):
+    if not text:
+        return []
 
     headers = load_section_headers()
 
-    lines = text.splitlines()
+    # Normalize aliases once.
+    normalized_headers = {
+        section: {
+            normalize_header(alias)
+            for alias in aliases
+        }
+        for section, aliases in headers.items()
+    }
 
     found = []
-    seen_sections = set()
 
-    for index, line in enumerate(lines):
+    for index, line in enumerate(text.splitlines()):
 
-        clean = line.strip().lower()
+        clean = normalize_header(line)
 
         if not clean:
             continue
 
-        for section, aliases in headers.items():
-
-            aliases = [a.lower() for a in aliases]
+        for section, aliases in normalized_headers.items():
 
             if clean in aliases:
-
-                # Ignore duplicate section headers
-                if section in seen_sections:
-                    continue
-
-                found.append(
-                    {
-                        "section": section,
-                        "line": index,
-                    }
-                )
-
-                seen_sections.add(section)
-
+                found.append({
+                    "section": section,
+                    "line": index,
+                })
                 break
 
-    return sorted(
-        found,
-        key=lambda x: x["line"],
-    )
+    return sorted(found, key=lambda item: item["line"])
+
 
 def extract_sections(text: str):
-    """
-    Split the resume into sections.
-    """
+    if not text:
+        return {"personal": ""}
 
     headers = find_section_headers(text)
-
     lines = text.splitlines()
 
     sections = {}
 
-    # Personal information (before first header)
-    if headers:
+    if not headers:
+        return {
+            "personal": text.strip()
+        }
 
-        sections["personal"] = "\n".join(
-            lines[: headers[0]["line"]]
-        ).strip()
+    sections["personal"] = "\n".join(
+        lines[:headers[0]["line"]]
+    ).strip()
 
-    else:
-
-        sections["personal"] = text.strip()
-
-        return sections
-
-    # Extract every section
-    for i in range(len(headers)):
-
-        current = headers[i]
+    # Preserve content from repeated sections.
+    for index, current in enumerate(headers):
 
         start = current["line"] + 1
 
-        if i + 1 < len(headers):
-
-            end = headers[i + 1]["line"]
-
+        if index + 1 < len(headers):
+            end = headers[index + 1]["line"]
         else:
-
             end = len(lines)
 
-        content = "\n".join(
-            lines[start:end]
-        ).strip()
+        content = "\n".join(lines[start:end]).strip()
 
-        sections[current["section"]] = content
+        section_name = current["section"]
+
+        if section_name in sections and content:
+            sections[section_name] += "\n" + content
+
+        else:
+            sections.setdefault(section_name, content)
 
     return sections
-    

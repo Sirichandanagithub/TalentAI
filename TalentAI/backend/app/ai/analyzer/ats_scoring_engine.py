@@ -166,89 +166,214 @@ def calculate_experience_score(
 
 def calculate_education_score(
     education_result: Dict
-) -> float:
+) -> Optional[float]:
 
     if not education_result:
-        return 0.0
+        return None
 
-    status = education_result.get(
-        "status"
-    )
+    status = education_result.get("status")
 
-    matched = education_result.get(
-        "matched",
-        []
-    )
+    matched = education_result.get("matched", [])
+    not_matched = education_result.get("not_matched", [])
+    unknown = education_result.get("unknown", [])
 
-    unknown = education_result.get(
-        "unknown",
-        []
-    )
-
-    # No education requirement
+    # No education requirement.
     if status == "not_required":
         return 100.0
 
-    total = (
-        len(matched)
-        + len(unknown)
-    )
+    # Count only requirements with sufficient evidence.
+    evaluated_total = len(matched) + len(not_matched)
 
-    if total == 0:
-        return 100.0
+    # All requirements are unknown.
+    if evaluated_total == 0:
+        return None
 
+    # Exact = 100%, Related = 85%.
     matched_score = sum(
         float(item.get("confidence", 0.0))
         for item in matched
     )
 
-    return clamp_score(
-        (matched_score / total) * 100
-    )
+    # Confirmed not_matched requirements contribute zero.
+    score = matched_score / evaluated_total
+
+    return clamp_score(score * 100)
 
 
 # ============================================================
 # PROJECT SCORE
 # ============================================================
 
+
 def calculate_project_score(
     project_result: Dict
 ) -> Optional[float]:
     """
-    Score project evidence against required job skills.
+    Calculate project score using:
+    - Required skill coverage: 50%
+    - Project relevance: 35%
+    - Evidence confidence: 15%
 
-    Return None when project evidence is unavailable.
+    Stronger relevant projects receive greater contribution.
+    Completely unrelated projects are excluded.
     """
 
-    if not project_result or not isinstance(project_result, dict):
+    if not isinstance(project_result, dict):
         return None
 
-    matched = project_result.get("matched_skills", [])
-    possible = project_result.get("possible_skills", [])
-    unknown = project_result.get("unknown_skills", [])
+    project_details = project_result.get(
+        "project_details", []
+    )
 
-    if not all(
-        isinstance(items, list)
-        for items in (matched, possible, unknown)
+    if not isinstance(project_details, list) or not project_details:
+        return None
+
+    valid_projects = [
+        project
+        for project in project_details
+        if isinstance(project, dict)
+    ]
+
+    if not valid_projects:
+        return None
+
+    # --------------------------------------------------------
+    # NORMALIZE AND VALIDATE PROJECT METRICS
+    # --------------------------------------------------------
+
+    evaluated_projects = []
+
+    for project in valid_projects:
+
+        try:
+            coverage = float(
+                project.get("required_skill_score", 0.0) or 0.0
+            )
+
+            relevance = float(
+                project.get("relevance_score", 0.0) or 0.0
+            )
+
+            confidence = float(
+                project.get("evidence_confidence", 0.0) or 0.0
+            )
+
+        except (TypeError, ValueError):
+            continue
+
+        # Project metrics are expected in the range 0 to 1.
+        coverage = max(0.0, min(coverage, 1.0))
+        relevance = max(0.0, min(relevance, 1.0))
+        confidence = max(0.0, min(confidence, 1.0))
+
+        # Exclude projects with absolutely no job-related evidence.
+        if (
+            coverage == 0.0
+            and relevance == 0.0
+            and confidence == 0.0
+        ):
+            continue
+
+        evaluated_projects.append({
+            "coverage": coverage,
+            "relevance": relevance,
+            "confidence": confidence,
+        })
+
+    if not evaluated_projects:
+        return None
+
+    # --------------------------------------------------------
+    # RANK PROJECTS BY RELEVANCE
+    # --------------------------------------------------------
+
+        # --------------------------------------------------------
+    # RANK PROJECTS BY INDIVIDUAL PROJECT SCORE
+    # --------------------------------------------------------
+
+    for project in evaluated_projects:
+        project["individual_score"] = (
+            project["coverage"] * 50
+            + project["relevance"] * 35
+            + project["confidence"] * 15
+        )
+
+    evaluated_projects.sort(
+        key=lambda project: project["individual_score"],
+        reverse=True,
+    )
+
+    # --------------------------------------------------------
+    # CONTROLLED PROJECT CONTRIBUTION
+    #
+    # First project: 60%
+    # Second project: 25%
+    # Third project: 10%
+    # Remaining projects: 5% collectively
+    # --------------------------------------------------------
+
+    contribution_weights = []
+
+    for index in range(len(evaluated_projects)):
+
+        if index == 0:
+            contribution_weights.append(0.60)
+
+        elif index == 1:
+            contribution_weights.append(0.25)
+
+        elif index == 2:
+            contribution_weights.append(0.10)
+
+        else:
+            contribution_weights.append(
+                0.05 / (len(evaluated_projects) - 3)
+            )
+
+    total_weight = sum(contribution_weights)
+
+    contribution_weights = [
+        weight / total_weight
+        for weight in contribution_weights
+    ]
+
+    # --------------------------------------------------------
+    # CALCULATE WEIGHTED PROJECT COMPONENTS
+    # --------------------------------------------------------
+
+    weighted_coverage = 0.0
+    weighted_relevance = 0.0
+    weighted_confidence = 0.0
+
+    for project, weight in zip(
+        evaluated_projects,
+        contribution_weights,
     ):
-        return None
 
-    if not (matched or possible or unknown):
-        return None
+        weighted_coverage += (
+            project["coverage"] * weight
+        )
 
-    if project_result.get("project_count") == 0:
-        return None
+        weighted_relevance += (
+            project["relevance"] * weight
+        )
 
-    total = len(matched) + len(possible) + len(unknown)
+        weighted_confidence += (
+            project["confidence"] * weight
+        )
 
-    if total == 0:
-        return None
+    # --------------------------------------------------------
+    # FINAL PROJECT SCORE
+    # --------------------------------------------------------
 
-    score = (
-        len(matched) + 0.5 * len(possible)
-    ) / total * 100
+    project_score = (
+        weighted_coverage * 50
+        + weighted_relevance * 35
+        + weighted_confidence * 15
+    )
 
-    return clamp_score(score)
+    return clamp_score(project_score)
+
 
 
 

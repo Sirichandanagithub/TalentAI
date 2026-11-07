@@ -164,11 +164,39 @@ def normalize_phone(phone):
 # ==========================================
 
 def extract_linkedin(text: str):
-    pass
+
+    if not text:
+        return None
+
+    pattern = (
+        r"(?:https?://)?"
+        r"(?:www\.)?"
+        r"linkedin\.com/"
+        r"(?:in|company)/"
+        r"[A-Za-z0-9_-]+/?"
+    )
+
+    match = re.search(pattern, text, re.IGNORECASE)
+
+    if match:
+        return match.group().strip()
+
+    return None
 
 
 def validate_linkedin(linkedin):
-    pass
+
+    if not linkedin:
+        return None
+
+    if not re.search(
+        r"linkedin\.com/(in|company)/",
+        linkedin,
+        re.IGNORECASE
+    ):
+        return None
+
+    return linkedin
 
 
 # ==========================================
@@ -176,11 +204,37 @@ def validate_linkedin(linkedin):
 # ==========================================
 
 def extract_github(text: str):
-    pass
 
+    if not text:
+        return None
+
+    pattern = (
+        r"(?:https?://)?"
+        r"(?:www\.)?"
+        r"github\.com/"
+        r"[A-Za-z0-9-]+/?"
+    )
+
+    match = re.search(pattern, text, re.IGNORECASE)
+
+    if match:
+        return match.group().strip()
+
+    return None
 
 def validate_github(github):
-    pass
+
+    if not github:
+        return None
+
+    if not re.search(
+        r"github\.com/[A-Za-z0-9-]+",
+        github,
+        re.IGNORECASE
+    ):
+        return None
+
+    return github
 
 
 # ==========================================
@@ -188,8 +242,32 @@ def validate_github(github):
 # ==========================================
 
 def extract_portfolio(text: str):
-    pass
 
+    if not text:
+        return None
+
+    pattern = (
+        r"https?://"
+        r"(?!www\.)"
+        r"(?!linkedin\.com)"
+        r"(?!github\.com)"
+        r"(?![\w.-]*linkedin\.com)"
+        r"(?![\w.-]*github\.com)"
+        r"[A-Za-z0-9.-]+\.[A-Za-z]{2,}"
+        r"(?:/[^\s|]*)?"
+    )
+
+    matches = re.findall(pattern, text, re.IGNORECASE)
+
+    if matches:
+        return matches[0].rstrip(".,;)")
+
+    return None
+
+
+# ==========================================
+# LOCATION
+# ==========================================
 
 # ==========================================
 # LOCATION
@@ -197,34 +275,40 @@ def extract_portfolio(text: str):
 
 def extract_location(text: str):
     """
-    Extract location from personal section.
+    Extract location from the personal section.
+    Expected format:
+    Name
+    City, State, PIN | Phone | Email
     """
 
-    # Split using "|" because many resumes separate contact info this way
-    parts = text.split("|")
+    if not text:
+        return None
 
-    for part in parts:
+    lines = [
+        line.strip()
+        for line in text.splitlines()
+        if line.strip()
+    ]
 
-        part = part.strip()
+    if not lines:
+        return None
 
-        # Ignore empty parts
-        if not part:
+    # Usually the location is on the second line.
+    for line in lines[1:]:
+
+        # Extract the first field before the pipe.
+        location = line.split("|")[0].strip()
+
+        if not location:
             continue
 
-        lower = part.lower()
-
-        # Skip obvious contact fields
-        if (
-            "phone" in lower
-            or "email" in lower
-            or "linkedin" in lower
-            or "github" in lower
-        ):
+        # Ignore fields containing email or phone information.
+        if re.search(r"@|\d{10}", location):
             continue
 
-        # Candidate location
-        if "," in part:
-            return part
+        # Location should contain a comma.
+        if "," in location:
+            return location
 
     return None
 

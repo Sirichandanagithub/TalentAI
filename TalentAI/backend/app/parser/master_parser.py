@@ -161,9 +161,7 @@ def parse_resume(sections: dict):
         ""
     )
 
-    skills = parse_skills(
-        skills_text
-    )
+    skills = parse_skills(skills_text)
 
     # --------------------------------------------------------
     # CERTIFICATIONS

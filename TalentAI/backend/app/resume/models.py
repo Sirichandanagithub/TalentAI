@@ -13,6 +13,7 @@ from app.auth.models import User
 from app.database.base_class import Base
 
 
+
 class Resume(Base):
     __tablename__ = "resumes"
 

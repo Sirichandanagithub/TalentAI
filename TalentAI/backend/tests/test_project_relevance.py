@@ -54,7 +54,9 @@ def test_description_mention_does_not_prove_skill_usage():
     project = {
         "project_name": "Customer Dashboard",
         "description": (
-            "Built a dashboard. SQL is mentioned "
+            "Built a dashboard. SQL is mentioned"
+            ""
+            "............ "
             "as a future learning goal."
         ),
         "technologies": ["Python", "Pandas"],
@@ -63,7 +65,7 @@ def test_description_mention_does_not_prove_skill_usage():
     result = analyzer.analyze_project(
         project=project,
         required_skills=["SQL"],
-        preferred_skills=[],
+        #preferred_skills=[],
     )
 
     assert "SQL" not in result["matched_required"]

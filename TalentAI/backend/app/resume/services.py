@@ -29,6 +29,7 @@ ALLOWED_EXTENSIONS = {".pdf"}
 MAX_FILE_SIZE = 5 * 1024 * 1024
 
 
+
 async def save_resume(
     db: Session,
     file: UploadFile,
@@ -39,23 +40,23 @@ async def save_resume(
     and store both the original text and structured data.
     """
 
-    # Validate the filename and extension
+    # 1. Validate filename and extension
     if not file.filename:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="A filename is required.",
         )
 
-    file_extension = Path(file.filename).suffix
+    file_extension = Path(file.filename).suffix.lower()
 
-    if file_extension.lower() not in ALLOWED_EXTENSIONS:
+    if file_extension not in ALLOWED_EXTENSIONS:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Only PDF files are allowed.",
         )
 
-    # Read and validate the uploaded content
-    contents = await file.read()
+    # 2. Read only up to 5 MB + 1 byte
+    contents = await file.read(MAX_FILE_SIZE + 1)
 
     if not contents:
         raise HTTPException(
@@ -69,31 +70,50 @@ async def save_resume(
             detail="File size must not exceed 5 MB.",
         )
 
-    # Create the upload directory
+    # 3. Validate actual PDF signature
+    if not contents.startswith(b"%PDF-"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid PDF file.",
+        )
+
+    # 4. Create upload directory
     UPLOAD_DIR.mkdir(
         parents=True,
         exist_ok=True,
     )
 
-    # Generate a unique filename
-    unique_filename = f"{uuid.uuid4()}{file_extension}"
+    # 5. Generate unique filename
+    unique_filename = f"{uuid.uuid4()}.pdf"
     file_path = UPLOAD_DIR / unique_filename
 
-    # Save the PDF
-    with open(file_path, "wb") as f:
-        f.write(contents)
-
-    # Step 1: Extract text from the PDF
-    resume_text = extract_text_from_pdf(file_path)
-
-    # Step 2: Detect and extract resume sections
-    sections = extract_sections(resume_text)
-
-    # Step 3: Parse the sections into structured resume data
-    parsed_data = parse_resume(sections)
-
-    # Step 4: Store both raw text and structured data
     try:
+        # 6. Save PDF
+        with open(file_path, "wb") as f:
+            f.write(contents)
+
+        # 7. Extract PDF text
+        try:
+            resume_text = extract_text_from_pdf(file_path)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid or unreadable PDF file.",
+                ) from exc
+
+        if not resume_text:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Could not extract readable text from the PDF.",
+            )
+
+                # 8. Detect resume sections
+        sections = extract_sections(resume_text)
+
+        # 9. Parse structured resume data
+        parsed_data = parse_resume(sections)
+
+        # 10. Save resume details to database
         resume = Resume(
             user_id=current_user.id,
             file_name=file.filename,
@@ -107,15 +127,24 @@ async def save_resume(
         db.refresh(resume)
 
     except Exception:
-        db.rollback()
+        try:
+            db.rollback()
+        except Exception:
+            pass
+
+        try:
+            if file_path.exists():
+                file_path.unlink()
+        except OSError:
+            pass
+
         raise
 
-    # Return the existing response structure
+    # 11. Return response
     return {
         "id": resume.id,
         "user_id": resume.user_id,
         "original_filename": resume.file_name,
         "stored_filename": unique_filename,
-        "file_path": resume.file_path,
         "uploaded_at": resume.uploaded_at,
     }

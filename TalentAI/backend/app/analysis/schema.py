@@ -13,9 +13,10 @@ class CandidateAnalysisRequest(BaseModel):
     Request payload for candidate-job analysis.
     """
 
-    resume: Dict[str, Any] = Field(
+    resume_id: int = Field(
         ...,
-        description="Structured candidate resume data.",
+        gt=0,
+        description="ID of the uploaded resume to analyze.",
     )
 
     job: Dict[str, Any] = Field(
@@ -24,33 +25,9 @@ class CandidateAnalysisRequest(BaseModel):
     )
 
     @model_validator(mode="after")
-    def validate_resume_and_job(self):
-        resume = self.resume
+    def validate_job(self):
         job = self.job
 
-        # Reject empty or placeholder resume objects.
-        valid_resume_fields = {
-            "skills",
-            "experience",
-            "education",
-            "projects",
-            "work_experience",
-            "technical_skills",
-            "certifications",
-            "summary",
-        }
-
-        if not any(
-            key in resume
-            and resume[key] not in (None, "", [], {})
-            for key in valid_resume_fields
-        ):
-            raise ValueError(
-                "Resume must contain meaningful candidate data, "
-                "such as skills, experience, education, or projects."
-            )
-
-        # Reject empty or placeholder job objects.
         valid_job_fields = {
             "required_skills",
             "preferred_skills",

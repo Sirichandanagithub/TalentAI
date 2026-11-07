@@ -1,5 +1,6 @@
 from sqlalchemy.orm import Session
-
+from fastapi import HTTPException, status
+from sqlalchemy.exc import IntegrityError
 from app.auth.models import User
 from app.auth.schema import UserCreate
 from app.core.security import (
@@ -12,13 +13,8 @@ def create_user(
     db: Session,
     user_data: UserCreate,
 ) -> User:
-    """
-    Create a new user with a securely hashed password.
-    """
 
-    hashed_password = hash_password(
-        user_data.password
-    )
+    hashed_password = hash_password(user_data.password)
 
     user = User(
         full_name=user_data.full_name,
@@ -27,9 +23,22 @@ def create_user(
         password_hash=hashed_password,
     )
 
-    db.add(user)
-    db.commit()
-    db.refresh(user)
+    try:
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+
+    except IntegrityError:
+        db.rollback()
+
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="An account with this email already exists.",
+        )
+
+    except Exception:
+        db.rollback()
+        raise
 
     return user
 

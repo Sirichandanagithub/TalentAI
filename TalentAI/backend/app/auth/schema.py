@@ -1,16 +1,36 @@
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, EmailStr
-
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    EmailStr,
+    Field,
+    model_validator,
+)
 class UserBase(BaseModel):
     full_name: str
     email: EmailStr
     phone: str | None = None
 
 class UserCreate(UserBase):
-    password: str
+    password: str = Field(min_length=12)
 
+    @model_validator(mode="after")
+    def validate_password(self):
+        if self.password.strip() != self.password:
+            raise ValueError(
+                "Password must not start or end with whitespace."
+            )
+
+        if len(self.password.encode("utf-8")) > 72:
+            raise ValueError(
+                "Password must not exceed 72 UTF-8 bytes."
+            )
+
+        return self
+    
 class UserLogin(BaseModel):
+
     email: EmailStr
     password: str
 
